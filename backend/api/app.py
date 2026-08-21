@@ -78,6 +78,11 @@ class ResolveRequest(BaseModel):
     user_id: int
     row_data: Optional[Dict[str, Any]] = None
 
+class TestConnectionRequest(BaseModel):
+    provider: str
+    api_key: str
+    model: Optional[str] = None
+
 # Handler logic for direct usage or FastAPI server
 def handle_register(req: RegisterRequest):
     return register_user(req.username, req.email, req.password)
@@ -272,7 +277,19 @@ def handle_delete_analysis(analysis_id: int, user_id: int):
 
 def handle_resolve(req: ResolveRequest):
     config = get_user_llm_config(req.user_id) if req.user_id else {"llm_provider": "openai", "llm_api_key": ""}
-    llm = LLMSolutionEngine(api_key=config.get("llm_api_key"), provider=config.get("llm_provider"))
+    api_key = (config.get("llm_api_key") or "").strip()
+    provider = config.get("llm_provider", "openai")
+
+    # CRITICAL: Block the request when no user API key is configured.
+    # Never fall back to env vars or rule-based engine for AI generation.
+    if not api_key:
+        return {
+            "success": False,
+            "error": "api_key_required",
+            "message": "No API key configured. Please add your API key in Settings to use AI Fix."
+        }
+
+    llm = LLMSolutionEngine(api_key=api_key, provider=provider)
     solution = llm.generate_solution(
         file_path=req.file_path,
         source_code=req.source_code,
@@ -280,8 +297,21 @@ def handle_resolve(req: ResolveRequest):
         ml_probability=req.ml_probability,
         row_data=req.row_data or {}
     )
+
+    # If the LLM returned an error dict, surface it
+    if solution.get("error"):
+        return {"success": False, "error": solution["error"], "message": solution.get("message", "AI generation failed.")}
+
     save_ai_solution(user_id=req.user_id, file_path=req.file_path, generated_solution=solution)
     return {"success": True, "solution": solution}
+
+def handle_test_connection(req: TestConnectionRequest):
+    """Tests an API key by sending a minimal ping to the selected provider."""
+    api_key = (req.api_key or "").strip()
+    if not api_key:
+        return {"success": False, "error": "api_key_required", "message": "No API key provided."}
+    llm = LLMSolutionEngine(api_key=api_key, provider=req.provider, model=req.model)
+    return llm.test_connection()
 
 def handle_get_file_content(file_path: str, repo_path: Optional[str] = None):
     try:

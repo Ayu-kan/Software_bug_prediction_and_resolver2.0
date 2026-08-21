@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, AlertTriangle, Code2, Sparkles, ExternalLink } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, Code2, Sparkles, ExternalLink, Lock } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 
 interface RiskTableProps {
   files: any[];
@@ -11,6 +12,8 @@ interface RiskTableProps {
 const RiskTable: React.FC<RiskTableProps> = ({ files, onPreview, onResolve }) => {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const { getActiveApiKey } = useAuthStore();
+  const hasApiKey = Boolean(getActiveApiKey());
 
   const toggleRow = (path: string) => {
     setExpandedRows(prev => ({ ...prev, [path]: !prev[path] }));
@@ -75,10 +78,15 @@ const RiskTable: React.FC<RiskTableProps> = ({ files, onPreview, onResolve }) =>
                       </button>
                       <button
                         onClick={() => onResolve(file)}
-                        className="px-2.5 py-1.5 text-xs bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-lg transition-colors flex items-center space-x-1 border border-purple-500/30"
-                        title="Generate AI Auto-Fix"
+                        disabled={!hasApiKey}
+                        className={`px-2.5 py-1.5 text-xs rounded-lg transition-colors flex items-center space-x-1 border ${
+                          hasApiKey
+                            ? 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border-purple-500/30'
+                            : 'bg-secondary/30 text-muted-foreground border-border cursor-not-allowed opacity-60'
+                        }`}
+                        title={hasApiKey ? 'Generate AI Auto-Fix' : 'API key required — configure in Settings'}
                       >
-                        <Sparkles size={14} />
+                        {hasApiKey ? <Sparkles size={14} /> : <Lock size={14} />}
                         <span>AI Fix</span>
                       </button>
                     </div>

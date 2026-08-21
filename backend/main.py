@@ -5,7 +5,9 @@ from typing import Optional, Dict, Any
 
 from backend.api.app import (
     RegisterRequest, LoginRequest, ConfigRequest, AnalysisRequest, ResolveRequest,
-    handle_register, handle_login, handle_config, handle_analysis, handle_resolve
+    TestConnectionRequest,
+    handle_register, handle_login, handle_config, handle_analysis, handle_resolve,
+    handle_test_connection
 )
 
 app = FastAPI(title="Enterprise Bug Risk Intelligence Platform API")
@@ -37,6 +39,10 @@ def run_analysis(req: AnalysisRequest):
 @app.post("/analysis/resolve")
 def resolve_issue(req: ResolveRequest):
     return handle_resolve(req)
+
+@app.post("/analysis/test-connection")
+def test_connection(req: TestConnectionRequest):
+    return handle_test_connection(req)
 
 @app.get("/analysis/history/{user_id}")
 def get_user_history(user_id: int):

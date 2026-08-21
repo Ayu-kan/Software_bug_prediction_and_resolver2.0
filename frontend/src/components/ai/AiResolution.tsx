@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Sparkles, Loader2, Check, Copy, AlertCircle, ShieldAlert, Code2, FileText, CheckCircle, GitCompare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Sparkles, Loader2, Check, Copy, AlertCircle, ShieldAlert, Code2, FileText, CheckCircle, GitCompare, Lock, Settings } from 'lucide-react';
 import { analysisAPI } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import CodeDiffView from '../code/CodeDiffView';
@@ -19,15 +20,23 @@ export interface SolutionDetails {
 }
 
 const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
-  const { user, llmConfig } = useAuthStore();
+  const { user, llmConfig, getActiveApiKey } = useAuthStore();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [solutionData, setSolutionData] = useState<SolutionDetails | string | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'diff' | 'code' | 'fix' | 'summary'>('diff');
 
+  const activeKey = getActiveApiKey();
+  const hasApiKey = Boolean(activeKey);
+
   const generateSolution = async () => {
     if (!user) return;
+    if (!hasApiKey) {
+      setError('No API key configured. Please go to Settings to add your API key.');
+      return;
+    }
     setLoading(true);
     setError('');
     
@@ -43,8 +52,10 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
       
       if (res.success && res.solution) {
         setSolutionData(res.solution);
+      } else if (res.error === 'api_key_required') {
+        setError('No API key configured on the server. Please save your API key in Settings.');
       } else {
-        setError(res.error || 'Failed to generate solution.');
+        setError(res.message || res.error || 'Failed to generate solution.');
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'An unexpected error occurred during solution generation.');
@@ -125,15 +136,40 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
           <p className="text-sm font-medium text-foreground">{file.risk_cause_description}</p>
         </div>
 
-        {/* Initial Prompt */}
-        {!solutionData && !loading && (
+        {/* No API Key — Locked State */}
+        {!hasApiKey && !solutionData && !loading && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border border-dashed border-amber-500/30 rounded-xl bg-amber-500/5">
+            <div className="p-4 bg-amber-500/10 rounded-full text-amber-400 mb-4 border border-amber-500/20">
+              <Lock size={40} />
+            </div>
+            <h3 className="text-xl font-bold mb-2 text-amber-300">API Key Required</h3>
+            <p className="text-muted-foreground text-sm max-w-sm mb-6 leading-relaxed">
+              Please configure your <strong>{llmConfig?.provider || 'AI provider'}</strong> API key in Settings before using AI analysis, bug explanation, or AI code generation features.
+            </p>
+            <button
+              onClick={() => { onClose(); navigate('/settings'); }}
+              className="bg-amber-500 hover:bg-amber-600 text-black px-6 py-2.5 rounded-xl font-semibold flex items-center space-x-2 transition-all shadow-lg shadow-amber-900/20"
+            >
+              <Settings size={18} />
+              <span>Go to Settings →</span>
+            </button>
+          </div>
+        )}
+
+        {/* Initial Prompt — key is present */}
+        {hasApiKey && !solutionData && !loading && (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border border-dashed border-border rounded-xl bg-secondary/10">
             <div className="p-4 bg-purple-500/10 rounded-full text-purple-400 mb-4 border border-purple-500/20">
               <Sparkles size={40} />
             </div>
             <h3 className="text-xl font-bold mb-2">Generate AI Refactored Fix</h3>
-            <p className="text-muted-foreground text-sm max-w-md mb-6 leading-relaxed">
-              Use {llmConfig?.provider || 'AI'} to generate a patch addressing high complexity, security risks, and bug-prone AST patterns.
+            <p className="text-muted-foreground text-sm max-w-md mb-1 leading-relaxed">
+              Use <strong className="capitalize">{llmConfig?.provider || 'AI'}</strong>
+              {llmConfig?.model && <span className="text-muted-foreground/70"> ({llmConfig.model})</span>} to generate a patch addressing high complexity, security risks, and bug-prone patterns.
+            </p>
+            <p className="text-xs text-green-400 mb-6 flex items-center space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+              <span>API key active</span>
             </p>
 
             <button
@@ -145,8 +181,8 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
             </button>
 
             {error && (
-              <div className="mt-6 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-sm flex items-center space-x-2">
-                <AlertCircle size={16} />
+              <div className="mt-6 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-sm flex items-center space-x-2 max-w-sm">
+                <AlertCircle size={16} className="shrink-0" />
                 <span>{error}</span>
               </div>
             )}

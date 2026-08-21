@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Editor from '@monaco-editor/react';
-import { X, AlertTriangle, Sparkles, ChevronRight, ShieldAlert, FileCode, Info, ExternalLink, Loader2 } from 'lucide-react';
+import { X, AlertTriangle, Sparkles, ChevronRight, ShieldAlert, FileCode, Info, ExternalLink, Loader2, Lock } from 'lucide-react';
 import { analysisAPI } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 
 interface CodePreviewProps {
   file: any;
@@ -18,6 +19,8 @@ const CodePreview: React.FC<CodePreviewProps> = ({ file, targetLineNumber, onClo
   const [showBugDrawer, setShowBugDrawer] = useState<boolean>(true);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  const { getActiveApiKey } = useAuthStore();
+  const hasApiKey = Boolean(getActiveApiKey());
 
   if (!file) return null;
 
@@ -112,10 +115,16 @@ const CodePreview: React.FC<CodePreviewProps> = ({ file, targetLineNumber, onClo
         <div className="flex items-center space-x-2">
           {onResolve && (
             <button
-              onClick={() => onResolve(file)}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-purple-900/20 transition-all"
+              onClick={() => hasApiKey && onResolve(file)}
+              disabled={!hasApiKey}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md transition-all ${
+                hasApiKey
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-900/20'
+                  : 'bg-secondary/60 text-muted-foreground cursor-not-allowed opacity-60 border border-border'
+              }`}
+              title={hasApiKey ? 'Generate AI Auto-Fix' : 'API key required — configure in Settings'}
             >
-              <Sparkles size={14} />
+              {hasApiKey ? <Sparkles size={14} /> : <Lock size={14} />}
               <span>AI Resolution</span>
             </button>
           )}
@@ -235,11 +244,17 @@ const CodePreview: React.FC<CodePreviewProps> = ({ file, targetLineNumber, onClo
 
                 {onResolve && (
                   <button
-                    onClick={() => onResolve(file)}
-                    className="w-full mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-semibold flex items-center justify-center space-x-1.5 transition-colors shadow-sm"
+                    onClick={() => hasApiKey && onResolve(file)}
+                    disabled={!hasApiKey}
+                    className={`w-full mt-2 py-2 rounded-lg font-semibold flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
+                      hasApiKey
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-secondary/60 text-muted-foreground cursor-not-allowed opacity-60 border border-border'
+                    }`}
+                    title={hasApiKey ? 'Generate AI fix' : 'API key required — configure in Settings'}
                   >
-                    <Sparkles size={14} />
-                    <span>Generate Fix for this Line</span>
+                    {hasApiKey ? <Sparkles size={14} /> : <Lock size={14} />}
+                    <span>{hasApiKey ? 'Generate Fix for this Line' : 'API Key Required'}</span>
                   </button>
                 )}
               </div>

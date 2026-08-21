@@ -1,22 +1,58 @@
 """
 backend/services/llm_service.py
 --------------------------------
-Universal LLM service for AI issue resolution, handling both OpenAI and Gemini API integration with fallback rule engine and secret redaction.
+Universal LLM service supporting OpenAI, Google Gemini, and Groq.
+All AI requests MUST use the API key provided by the authenticated user.
+No server-side, developer, default, fallback, or environment-variable keys are ever used.
 """
 
 import re
 import json
-import os
 import urllib.request
 import urllib.error
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 API_KEY_PATTERNS = [
     re.compile(r"(?i)(api_key|apikey|secret|password|auth_token|jwt_secret)\s*[:=]\s*['\"]([^'\"]+)['\"]"),
     re.compile(r"sk-[a-zA-Z0-9]{20,}"),
     re.compile(r"AIzaSy[a-zA-Z0-9_-]{33}"),
     re.compile(r"ghp_[a-zA-Z0-9]{36}"),
+    re.compile(r"gsk_[a-zA-Z0-9]{40,}"),
 ]
+
+# Provider-specific defaults
+PROVIDER_DEFAULTS = {
+    "openai": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "default_model": "gpt-3.5-turbo",
+        "models": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "key_prefix": "sk-",
+    },
+    "gemini": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        "default_model": "gemini-pro",
+        "models": ["gemini-1.5-pro", "gemini-pro", "gemini-1.5-flash"],
+        "key_prefix": "AIzaSy",
+    },
+    "groq": {
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "default_model": "llama3-8b-8192",
+        "models": ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"],
+        "key_prefix": "gsk_",
+    },
+}
+
+ERROR_MESSAGES = {
+    "api_key_required": "No API key configured. Please add your API key in Settings.",
+    "invalid_api_key": "The API key provided is invalid or expired.",
+    "auth_failed": "Authentication failed. Check your API key.",
+    "rate_limit": "Rate limit exceeded. Please wait a moment and try again.",
+    "model_unavailable": "The selected model is unavailable. Try a different model.",
+    "network_error": "Network connection failed. Check your internet connection.",
+    "provider_error": "The AI provider returned an unexpected error.",
+    "generation_failed": "AI generation failed. Please try again.",
+}
+
 
 def redact_secrets(code_text: str) -> str:
     """Removes API keys, tokens, and credentials before sending context to LLMs."""
@@ -25,140 +61,164 @@ def redact_secrets(code_text: str) -> str:
         sanitized = pattern.sub("[REDACTED_SECRET]", sanitized)
     return sanitized
 
-class LLMSolutionEngine:
-    def __init__(self, api_key: str = None, provider: str = "openai"):
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
-        self.provider = (provider or "openai").lower()
 
-    def generate_solution(self, file_path: str, source_code: str, risk_factors: str, ml_probability: float, row_data: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Generates structured fix recommendations and improved code via live API or fallback engine."""
+def _classify_error(status_code: int, body: str) -> str:
+    """Map HTTP status codes to user-friendly error messages."""
+    if status_code == 401:
+        return ERROR_MESSAGES["invalid_api_key"]
+    if status_code == 403:
+        return ERROR_MESSAGES["auth_failed"]
+    if status_code == 429:
+        return ERROR_MESSAGES["rate_limit"]
+    if status_code == 404:
+        return ERROR_MESSAGES["model_unavailable"]
+    if status_code >= 500:
+        return ERROR_MESSAGES["provider_error"]
+    return ERROR_MESSAGES["generation_failed"]
+
+
+class LLMSolutionEngine:
+    def __init__(self, api_key: str = None, provider: str = "openai", model: str = None):
+        # CRITICAL: No fallback to environment variables. 
+        # Only the key explicitly provided by the authenticated user is used.
+        self.api_key = (api_key or "").strip()
+        self.provider = (provider or "openai").lower()
+        provider_cfg = PROVIDER_DEFAULTS.get(self.provider, PROVIDER_DEFAULTS["openai"])
+        self.model = (model or "").strip() or provider_cfg["default_model"]
+
+    def has_api_key(self) -> bool:
+        return bool(self.api_key)
+
+    def test_connection(self) -> Dict[str, Any]:
+        """
+        Validates the API key with a minimal ping request.
+        Returns {"success": bool, "provider": str, "model": str, "error": str | None}
+        """
+        if not self.api_key:
+            return {"success": False, "error": ERROR_MESSAGES["api_key_required"]}
+
+        ping_prompt = "Reply with exactly: OK"
+        try:
+            result = self._make_api_request(ping_prompt, max_tokens=10)
+            if result is None:
+                return {"success": False, "error": ERROR_MESSAGES["generation_failed"]}
+            return {"success": True, "provider": self.provider, "model": self.model, "error": None}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def generate_solution(
+        self,
+        file_path: str,
+        source_code: str,
+        risk_factors: str,
+        ml_probability: float,
+        row_data: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Generates structured fix recommendations via the user's configured LLM API.
+        Returns an error dict if no API key is configured — no silent rule-based fallback.
+        """
+        if not self.api_key:
+            return {
+                "error": "api_key_required",
+                "message": ERROR_MESSAGES["api_key_required"],
+                "provider": self.provider
+            }
+
         clean_code = redact_secrets(source_code) if source_code else "# [Source code empty]"
         row_data = row_data or {}
 
-        if self.api_key:
-            live_solution = self._call_llm_api(file_path, clean_code, risk_factors, ml_probability, row_data)
-            if live_solution:
-                return live_solution
-
-        # Internal intelligent rule engine fallback when live API key is unavailable or fails
-        complexity = row_data.get("complexity", 0)
-        previous_bugs = row_data.get("previous_bug_count", 0)
-        fan_in = row_data.get("fan_in", 0)
-        suspicious_lines = row_data.get("suspicious_lines", [])
-
-        problem_summary = (
-            f"Analysis detected risk score {ml_probability*100:.1f}% in `{file_path}`. "
-            f"Triggers: {risk_factors}. "
-            f"Metrics: Cyclomatic Complexity = {complexity}, Past Bugs = {previous_bugs}, Dependent Files = {fan_in}."
-        )
-
-        susp_desc = ""
-        if suspicious_lines:
-            lines_str = ", ".join([f"L{s['line_number']} ({s['reason']})" for s in suspicious_lines[:3]])
-            susp_desc = f"\n- **Suspicious Lines Flagged**: {lines_str}"
-
-        suggested_fix = (
-            f"1. **Refactor High Risk Code**: Add try/except error boundaries around volatile functions in `{file_path}`.\n"
-            f"2. **Defensive Validation**: Sanitize inputs and check for null/empty states prior to function execution.{susp_desc}\n"
-            f"3. **Decouple Dependencies**: Protect {fan_in} dependent components by ensuring signature compatibility."
-        )
-
-        lines = source_code.splitlines() if source_code else []
-        
-        # Build actual refactored version of the file content
-        refactored_lines = []
-        refactored_lines.append(f"# =========================================================")
-        refactored_lines.append(f"# AI REFACTORED SOLUTION: {file_path}")
-        refactored_lines.append(f"# Target Risk Reduction: {ml_probability*100:.1f}% -> <15%")
-        refactored_lines.append(f"# =========================================================")
-        refactored_lines.append("import logging")
-        refactored_lines.append("import typing")
-        refactored_lines.append("")
-        refactored_lines.append("logger = logging.getLogger(__name__)")
-        refactored_lines.append("")
-
-        susp_line_nums = {s["line_number"]: s for s in suspicious_lines}
-
-        if lines:
-            for idx, line in enumerate(lines, 1):
-                if idx in susp_line_nums:
-                    s_info = susp_line_nums[idx]
-                    indent = " " * (len(line) - len(line.lstrip()))
-                    refactored_lines.append(f"{indent}# FIX (Line {idx}): Handled potential defect ({s_info.get('reason', 'Bug-prone')})")
-                    refactored_lines.append(f"{indent}try:")
-                    refactored_lines.append(f"{indent}    {line.strip()}")
-                    refactored_lines.append(f"{indent}except Exception as err:")
-                    refactored_lines.append(f"{indent}    logger.error(f'Error at line {idx} in {file_path}: {{err}}')")
-                else:
-                    refactored_lines.append(line)
-        else:
-            refactored_lines.append(f"# [Source code empty or file not readable]")
-
-        improved_code_snippet = "\n".join(refactored_lines)
-
-        possible_side_effects = (
-            f"- **Dependent Modules**: {fan_in} dependent component(s) import `{file_path}`.\n"
-            f"- **Validation**: Run automated test suite to ensure error logging wrappers operate cleanly."
-        )
-
-        return {
-            "problem_summary": problem_summary,
-            "suggested_fix": suggested_fix,
-            "improved_code": improved_code_snippet,
-            "possible_side_effects": possible_side_effects,
-            "sanitized_code": clean_code
-        }
-
-    def _call_llm_api(self, file_path: str, clean_code: str, risk_factors: str, ml_probability: float, row_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call OpenAI or Gemini REST API."""
         prompt = (
-            f"You are an expert software engineer fixing high-risk bug-prone code.\n"
-            f"Target File: {file_path}\n"
-            f"Risk Probability: {ml_probability*100:.1f}%\n"
+            f"You are an expert software engineer. Analyze this high-risk file and provide a fix.\n"
+            f"File: {file_path}\n"
+            f"Risk Score: {ml_probability * 100:.1f}%\n"
             f"Risk Triggers: {risk_factors}\n"
-            f"Code Metrics: {json.dumps(row_data)}\n\n"
-            f"Source Code:\n{clean_code[:2000]}\n\n"
-            f"Return JSON object with keys: 'problem_summary', 'suggested_fix', 'improved_code', 'possible_side_effects'."
+            f"Metrics: {json.dumps({k: row_data.get(k) for k in ['complexity', 'loc', 'previous_bug_count', 'fan_in'] if k in row_data})}\n\n"
+            f"Source Code:\n{clean_code[:3000]}\n\n"
+            f"Return a JSON object with these exact keys:\n"
+            f"- problem_summary: Brief description of the detected risk\n"
+            f"- suggested_fix: Step-by-step fix recommendations (markdown)\n"
+            f"- improved_code: The complete refactored source file\n"
+            f"- possible_side_effects: Warnings about dependent components\n"
         )
 
         try:
-            if "gemini" in self.provider:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={self.api_key}"
+            raw_text = self._make_api_request(prompt)
+            if raw_text is None:
+                return {"error": "generation_failed", "message": ERROR_MESSAGES["generation_failed"]}
+
+            # Extract JSON from markdown code fence if present
+            json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                return {
+                    "problem_summary": parsed.get("problem_summary", ""),
+                    "suggested_fix": parsed.get("suggested_fix", ""),
+                    "improved_code": parsed.get("improved_code", ""),
+                    "possible_side_effects": parsed.get("possible_side_effects", ""),
+                    "sanitized_code": clean_code,
+                    "provider": self.provider,
+                    "model": self.model,
+                }
+            # If LLM returned plain text (not JSON), wrap it
+            return {
+                "problem_summary": f"AI analysis for {file_path} (Risk: {ml_probability*100:.1f}%)",
+                "suggested_fix": raw_text,
+                "improved_code": clean_code,
+                "possible_side_effects": "Review all dependent modules after applying changes.",
+                "sanitized_code": clean_code,
+                "provider": self.provider,
+                "model": self.model,
+            }
+        except Exception as e:
+            return {"error": "generation_failed", "message": f"{ERROR_MESSAGES['generation_failed']} ({str(e)})"}
+
+    def _make_api_request(self, prompt: str, max_tokens: int = 2048) -> Optional[str]:
+        """
+        Routes the request to the correct provider and returns the raw text response.
+        Raises a descriptive exception on HTTP errors.
+        """
+        try:
+            if self.provider == "gemini":
+                url = PROVIDER_DEFAULTS["gemini"]["url"].format(model=self.model)
+                url = f"{url}?key={self.api_key}"
                 headers = {"Content-Type": "application/json"}
                 body = json.dumps({
-                    "contents": [{"parts": [{"text": prompt}]}]
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.2}
                 }).encode("utf-8")
             else:
-                url = "https://api.openai.com/v1/chat/completions"
+                # OpenAI and Groq share the same API format
+                provider_cfg = PROVIDER_DEFAULTS.get(self.provider, PROVIDER_DEFAULTS["openai"])
+                url = provider_cfg["url"]
                 headers = {
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}"
                 }
                 body = json.dumps({
-                    "model": "gpt-3.5-turbo",
+                    "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.2
+                    "temperature": 0.2,
+                    "max_tokens": max_tokens
                 }).encode("utf-8")
 
             req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                if "gemini" in self.provider:
-                    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                if self.provider == "gemini":
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
                 else:
-                    raw_text = data["choices"][0]["message"]["content"]
-                
-                # Extract JSON if enclosed in markdown code fence
-                json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group(0))
-                    return {
-                        "problem_summary": parsed.get("problem_summary", ""),
-                        "suggested_fix": parsed.get("suggested_fix", ""),
-                        "improved_code": parsed.get("improved_code", ""),
-                        "possible_side_effects": parsed.get("possible_side_effects", ""),
-                        "sanitized_code": clean_code
-                    }
+                    return data["choices"][0]["message"]["content"]
+
+        except urllib.error.HTTPError as e:
+            body_text = ""
+            try:
+                body_text = e.read().decode("utf-8")
+            except Exception:
+                pass
+            error_msg = _classify_error(e.code, body_text)
+            raise Exception(error_msg)
+        except urllib.error.URLError:
+            raise Exception(ERROR_MESSAGES["network_error"])
         except Exception as e:
-            print(f"LLM API call failed: {e}")
-        return None
+            raise Exception(f"{ERROR_MESSAGES['generation_failed']}: {str(e)}")

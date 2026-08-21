@@ -16,6 +16,8 @@ export const authAPI = {
 export const analysisAPI = {
   run: (data: AnalysisRequest) => api.post('/analysis/run', data).then(r => r.data),
   resolve: (data: ResolveRequest) => api.post('/analysis/resolve', data).then(r => r.data),
+  testConnection: (provider: string, apiKey: string, model?: string) =>
+    api.post('/analysis/test-connection', { provider, api_key: apiKey, model }).then(r => r.data),
   getHistory: (userId: number) => api.get(`/analysis/history/${userId}`).then(r => r.data),
   getDetails: (analysisId: number, userId: number) => api.get(`/analysis/details/${analysisId}?user_id=${userId}`).then(r => r.data),
   delete: (analysisId: number, userId: number) => api.delete(`/analysis/delete/${analysisId}?user_id=${userId}`).then(r => r.data),
