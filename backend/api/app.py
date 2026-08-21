@@ -125,6 +125,25 @@ def handle_analysis(repo_path: str, user_id: int, analysis_mode: str = "Normal M
         ml_probs = model.predict_proba(X_input)[:, 1] if hasattr(model, "predict_proba") else [0.5]*len(df)
         df["ml_probability"] = ml_probs
 
+        # --- Per-repo calibration ---
+        # The ML model was trained on historical data where most files are NOT bugs.
+        # When analyzing a new repo with missing history features defaulting to 0,
+        # the model tends to systematically over-predict risk.
+        # We apply percentile-based normalization so scores reflect *relative* risk
+        # within the analyzed repo rather than absolute calibration from training data.
+        import numpy as np
+        raw = df["ml_probability"].values.copy()
+        p_min = float(np.percentile(raw, 5))   # ignore extreme outliers at bottom
+        p_max = float(np.percentile(raw, 95))   # ignore extreme outliers at top
+        if p_max > p_min:
+            # Spread the middle 90% of scores across [0.05, 0.85] range
+            # so most files land in Low-Medium, only true outliers reach High
+            normalized = (raw - p_min) / (p_max - p_min)  # [0, 1] relative to this repo
+            calibrated = 0.05 + normalized * 0.80           # rescale to [0.05, 0.85]
+            calibrated = np.clip(calibrated, 0.0, 1.0)
+            df["ml_probability"] = calibrated
+        # --- End calibration ---
+
         dep_risk = df.get("dependency_risk", 0) / 100.0
         
         # Calculate dynamic architecture risk score based on role & path importance
@@ -145,13 +164,26 @@ def handle_analysis(repo_path: str, user_id: int, analysis_mode: str = "Normal M
             loc = row.get("loc", 0)
             dep = row.get("dependency_risk", 0)
             arch_role = row.get("architecture_role", "")
+            churn = row.get("code_churn", 0)
+            developer_count = row.get("developer_count", 0)
             
-            if comp > 20 or loc > 250:
-                causes.append(f"High code complexity (LOC: {loc}, Complexity: {comp})")
-            if bugs > 0:
-                causes.append(f"Historical bugs ({bugs})")
-            if dep > 50:
-                causes.append(f"High dependency coupling (Fan-in: {row.get('fan_in', 0)})")
+            # Only flag genuinely high values — raised thresholds to avoid noise
+            if comp > 40 and loc > 500:
+                causes.append(f"Very high code complexity (LOC: {loc}, Complexity: {comp})")
+            elif comp > 25 or loc > 350:
+                causes.append(f"Elevated code complexity (LOC: {loc}, Complexity: {comp})")
+            if bugs > 2:
+                causes.append(f"Repeated historical bugs ({bugs} recorded)")
+            elif bugs > 0:
+                causes.append(f"Historical bug record ({bugs})")
+            if dep > 70:
+                causes.append(f"Very high dependency coupling (Fan-in: {row.get('fan_in', 0)})")
+            elif dep > 50:
+                causes.append(f"Moderate dependency coupling (Fan-in: {row.get('fan_in', 0)})")
+            if churn > 1000:
+                causes.append(f"High code churn ({int(churn)} lines modified)")
+            if developer_count > 5:
+                causes.append(f"Many contributors ({int(developer_count)} devs) increases merge risk")
             if "Authentication" in arch_role or "Security" in arch_role:
                 causes.append("Critical Auth/Security component")
             elif "Database" in arch_role:
@@ -174,7 +206,7 @@ def handle_analysis(repo_path: str, user_id: int, analysis_mode: str = "Normal M
         ranked_all = rank_files(records)
         top_10 = get_top_10_risky_files(records)
         hybrid_filtered = filter_hybrid_mode(records, threshold=0.60)
-        high_risk_cnt = sum(1 for r in ranked_all if r.get("ml_probability", 0) >= 0.70)
+        high_risk_cnt = sum(1 for r in ranked_all if r.get("ml_probability", 0) >= 0.75)
 
         result_payload = {
             "success": True,
@@ -250,3 +282,18 @@ def handle_resolve(req: ResolveRequest):
     )
     save_ai_solution(user_id=req.user_id, file_path=req.file_path, generated_solution=solution)
     return {"success": True, "solution": solution}
+
+def handle_get_file_content(file_path: str, repo_path: Optional[str] = None):
+    try:
+        target_path = file_path
+        if repo_path and not os.path.isabs(file_path):
+            target_path = os.path.join(repo_path, file_path)
+        
+        if os.path.exists(target_path) and os.path.isfile(target_path):
+            with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            return {"success": True, "content": content}
+        return {"success": False, "error": f"File not found at path: {target_path}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+

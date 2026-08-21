@@ -13,11 +13,9 @@ RISKY_PATTERNS = [
     (re.compile(r'\beval\s*\('), "Use of `eval()` introduces severe dynamic execution security vulnerabilities.", "Security Vulnerability", "Critical"),
     (re.compile(r'\bexec\s*\('), "Use of `exec()` allows unsafe code execution.", "Security Vulnerability", "Critical"),
     (re.compile(r'\bTODO\b|\bFIXME\b|\bHACK\b|\bXXX\b', re.I), "Unfinished implementation marker indicates potential logic defect or missing edge-case handling.", "Technical Debt", "Medium"),
-    (re.compile(r'==\s*None|!=\s*None'), "Comparison with `None` using binary operator instead of `is` / `is not`.", "Code Quality / Type Warning", "Low"),
-    (re.compile(r'\b(open|connect|Cursor)\b.*(?!with)'), "Resource allocation without a context manager (`with`) can cause leaks under exceptions.", "Future Risk / Resource Leak", "Medium"),
     (re.compile(r'\bwhile\s+True\s*:'), "Infinite loop pattern `while True:` prone to deadlock if break condition is missed.", "Control Flow Risk", "High"),
-    (re.compile(r'\bglobal\s+\w+'), "Global state mutation increases coupling and causes race conditions.", "Future Development Risk", "Medium"),
     (re.compile(r'catch\s*\(\s*Exception\s+\w+\s*\)\s*\{\s*\}', re.I), "Empty catch block suppresses errors without logging.", "Current Bug Risk", "High"),
+    (re.compile(r'\bglobal\s+\w+'), "Global state mutation increases coupling and causes race conditions.", "Future Development Risk", "Medium"),
 ]
 
 def analyze_suspicious_lines(file_path: str, source_code: str, file_metrics: dict = None) -> list:
@@ -72,11 +70,12 @@ def analyze_suspicious_lines(file_path: str, source_code: str, file_metrics: dic
                 # Long function bodies
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     func_len = (node.end_lineno - node.lineno) if hasattr(node, 'end_lineno') else 0
-                    if func_len > 40 and node.lineno not in seen_line_numbers and node.lineno <= len(lines):
+                    # Raised threshold from 40 to 80 lines — short functions are common & acceptable
+                    if func_len > 80 and node.lineno not in seen_line_numbers and node.lineno <= len(lines):
                         suspicious_lines.append({
                             "line_number": node.lineno,
                             "line_code": lines[node.lineno - 1],
-                            "reason": f"Large function definition `{node.name}` ({func_len} lines) reduces maintainability.",
+                            "reason": f"Very large function `{node.name}` ({func_len} lines) severely reduces maintainability and testability.",
                             "risk_type": "High Complexity Risk",
                             "severity": "Medium"
                         })
@@ -85,11 +84,12 @@ def analyze_suspicious_lines(file_path: str, source_code: str, file_metrics: dic
                 # Functions with excessive arguments (> 5)
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     arg_count = len(node.args.args)
-                    if arg_count > 5 and node.lineno not in seen_line_numbers and node.lineno <= len(lines):
+                    # Raised from 5 to 7 — 5 args is common in well-written code
+                    if arg_count > 7 and node.lineno not in seen_line_numbers and node.lineno <= len(lines):
                         suspicious_lines.append({
                             "line_number": node.lineno,
                             "line_code": lines[node.lineno - 1],
-                            "reason": f"Function `{node.name}` has {arg_count} parameters, exceeding clean architecture bounds.",
+                            "reason": f"Function `{node.name}` has {arg_count} parameters — consider a config object or dataclass to reduce coupling.",
                             "risk_type": "Architectural Coupling Risk",
                             "severity": "Low"
                         })

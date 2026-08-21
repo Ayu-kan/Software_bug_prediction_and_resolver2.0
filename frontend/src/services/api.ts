@@ -19,4 +19,6 @@ export const analysisAPI = {
   getHistory: (userId: number) => api.get(`/analysis/history/${userId}`).then(r => r.data),
   getDetails: (analysisId: number, userId: number) => api.get(`/analysis/details/${analysisId}?user_id=${userId}`).then(r => r.data),
   delete: (analysisId: number, userId: number) => api.delete(`/analysis/delete/${analysisId}?user_id=${userId}`).then(r => r.data),
+  getFileContent: (filePath: string, repoPath?: string) => 
+    api.get(`/analysis/file-content`, { params: { file_path: filePath, repo_path: repoPath } }).then(r => r.data),
 };

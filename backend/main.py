@@ -53,6 +53,12 @@ def delete_analysis(analysis_id: int, user_id: int):
     from backend.api.app import handle_delete_analysis
     return handle_delete_analysis(analysis_id, user_id)
 
+@app.get("/analysis/file-content")
+def get_file_content(file_path: str, repo_path: Optional[str] = None):
+    from backend.api.app import handle_get_file_content
+    return handle_get_file_content(file_path, repo_path)
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+

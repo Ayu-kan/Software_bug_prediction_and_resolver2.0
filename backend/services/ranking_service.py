@@ -17,10 +17,12 @@ def rank_files(df_records: list) -> list:
     
     for idx, item in enumerate(sorted_files, 1):
         item["rank"] = idx
-        # Calculate risk level
+        # Calculate risk level using calibrated probability
         prob = item.get("ml_probability", 0) * 100
-        if prob >= 70:
-            item["risk_level"] = "Critical" if prob >= 85 else "High"
+        if prob >= 80:
+            item["risk_level"] = "Critical"
+        elif prob >= 65:
+            item["risk_level"] = "High"
         elif prob >= 40:
             item["risk_level"] = "Medium"
         else:
@@ -35,9 +37,10 @@ def get_top_10_risky_files(df_records: list) -> list:
     ranked = rank_files(df_records)
     return ranked[:10]
 
-def filter_hybrid_mode(df_records: list, threshold: float = 0.60) -> list:
+def filter_hybrid_mode(df_records: list, threshold: float = 0.65) -> list:
     """
-    Filters files for Hybrid Mode: keeps only files with ML bug probability > threshold (60%).
+    Filters files for Hybrid Mode: keeps only files with ML bug probability > threshold (65%).
+    Threshold raised from 60% to reduce false positives after calibration.
     """
     ranked = rank_files(df_records)
     filtered = [
