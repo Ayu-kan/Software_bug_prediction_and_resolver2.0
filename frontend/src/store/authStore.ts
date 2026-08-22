@@ -1,17 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User } from "../types";
+import type { User, Workspace, WorkspaceRole } from "../types";
 
 export interface LlmConfig {
-  /** Currently selected provider */
   provider: 'openai' | 'gemini' | 'groq';
-  /** Per-provider API keys — only the active provider's key is sent to the backend */
   keys: {
     openai: string;
     gemini: string;
     groq: string;
   };
-  /** Selected model for the current provider */
   model?: string;
 }
 
@@ -19,11 +16,17 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   llmConfig: LlmConfig | null;
-  login: (user: User) => void;
+  activeWorkspace: Workspace | null;
+  userWorkspaces: Workspace[];
+  
+  login: (user: User, initialConfig?: Partial<LlmConfig>) => void;
   logout: () => void;
   setLlmConfig: (config: LlmConfig | null) => void;
-  /** Returns the API key for the currently selected provider, or '' if none */
+  setActiveWorkspace: (ws: Workspace | null) => void;
+  setUserWorkspaces: (workspaces: Workspace[]) => void;
   getActiveApiKey: () => string;
+  hasApiKey: () => boolean;
+  getCurrentRole: () => WorkspaceRole;
 }
 
 const DEFAULT_KEYS = { openai: '', gemini: '', groq: '' };
@@ -34,21 +37,62 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isAuthenticated: false,
       llmConfig: null,
+      activeWorkspace: null,
+      userWorkspaces: [],
 
-      login: (user) => set({ user, isAuthenticated: true }),
+      login: (user, initialConfig) => {
+        const currentConfig = get().llmConfig;
+        const mergedKeys = {
+          ...DEFAULT_KEYS,
+          ...(currentConfig?.keys || {}),
+          ...(initialConfig?.keys || {})
+        };
+        const provider = (initialConfig?.provider || currentConfig?.provider || 'openai') as 'openai' | 'gemini' | 'groq';
+        
+        set({
+          user,
+          isAuthenticated: true,
+          llmConfig: {
+            provider,
+            keys: mergedKeys,
+            model: initialConfig?.model || currentConfig?.model
+          }
+        });
+      },
 
-      logout: () => set({ user: null, isAuthenticated: false, llmConfig: null }),
+      logout: () => set({
+        user: null,
+        isAuthenticated: false,
+        llmConfig: null,
+        activeWorkspace: null,
+        userWorkspaces: []
+      }),
 
       setLlmConfig: (config) => set({ llmConfig: config }),
 
+      setActiveWorkspace: (ws) => set({ activeWorkspace: ws }),
+
+      setUserWorkspaces: (workspaces) => set({ userWorkspaces: workspaces }),
+
       getActiveApiKey: () => {
         const { llmConfig } = get();
-        if (!llmConfig) return '';
-        return llmConfig.keys?.[llmConfig.provider] || '';
+        if (!llmConfig || !llmConfig.provider) return '';
+        return (llmConfig.keys?.[llmConfig.provider] || '').trim();
       },
+
+      hasApiKey: () => {
+        const activeKey = get().getActiveApiKey();
+        return activeKey.length > 0;
+      },
+
+      getCurrentRole: (): WorkspaceRole => {
+        const { activeWorkspace } = get();
+        if (!activeWorkspace) return 'admin';
+        return activeWorkspace.role || 'editor';
+      }
     }),
     {
-      name: 'auth-storage',
+      name: 'auth-storage-v2',
     }
   )
 );
