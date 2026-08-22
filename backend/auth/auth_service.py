@@ -5,7 +5,7 @@ User authentication and API key persistence management.
 """
 
 from backend.database.db import get_db
-from backend.auth.security import hash_password, verify_password, create_access_token, verify_access_token
+from backend.auth.security import hash_password, verify_password, create_access_token, verify_access_token, encrypt_api_key, decrypt_api_key
 
 def register_user(username: str, email: str, password: str) -> dict:
     conn = get_db()
@@ -45,16 +45,17 @@ def login_user(username: str, password: str) -> dict:
         "user_id": user["id"],
         "username": user["username"],
         "llm_provider": user["llm_provider"] or "openai",
-        "llm_api_key": user["llm_api_key"] or "",
+        "llm_api_key": decrypt_api_key(user["llm_api_key"]) if user["llm_api_key"] else "",
         "token": token
     }
 
 def update_user_llm_config(user_id: int, provider: str, api_key: str) -> dict:
     conn = get_db()
     cursor = conn.cursor()
+    encrypted_api_key = encrypt_api_key(api_key)
     cursor.execute(
         "UPDATE users SET llm_provider = ?, llm_api_key = ? WHERE id = ?",
-        (provider, api_key, user_id)
+        (provider, encrypted_api_key, user_id)
     )
     conn.commit()
     conn.close()
@@ -67,5 +68,5 @@ def get_user_llm_config(user_id: int) -> dict:
     row = cursor.fetchone()
     conn.close()
     if row:
-        return {"llm_provider": row["llm_provider"] or "openai", "llm_api_key": row["llm_api_key"] or ""}
+        return {"llm_provider": row["llm_provider"] or "openai", "llm_api_key": decrypt_api_key(row["llm_api_key"]) if row["llm_api_key"] else ""}
     return {"llm_provider": "openai", "llm_api_key": ""}

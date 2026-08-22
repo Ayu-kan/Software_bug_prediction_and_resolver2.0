@@ -10,8 +10,30 @@ import hmac
 import json
 import base64
 import time
+# pyrefly: ignore [missing-import]
+from cryptography.fernet import Fernet
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "super-secret-bug-prediction-key-2026")
+
+def _get_fernet_key() -> bytes:
+    key_hash = hashlib.sha256(SECRET_KEY.encode('utf-8')).digest()
+    return base64.urlsafe_b64encode(key_hash)
+
+_fernet = Fernet(_get_fernet_key())
+
+def encrypt_api_key(api_key: str) -> str:
+    if not api_key:
+        return ""
+    return _fernet.encrypt(api_key.encode('utf-8')).decode('utf-8')
+
+def decrypt_api_key(encrypted_key: str) -> str:
+    if not encrypted_key:
+        return ""
+    try:
+        return _fernet.decrypt(encrypted_key.encode('utf-8')).decode('utf-8')
+    except Exception:
+        # Fallback for plain text existing keys
+        return encrypted_key
 
 def hash_password(password: str) -> str:
     salt = os.urandom(16)

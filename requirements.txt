@@ -32,3 +32,4 @@ pydriller>=2.4          # Commit history, churn, developer count
 networkx>=3.0           # File import dependency graph construction
 
 # --- HTTP Requests (LLM API calls use stdlib urllib, no extra dep needed) ---
+cryptography>=41.0.0

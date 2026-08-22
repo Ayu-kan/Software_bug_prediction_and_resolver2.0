@@ -125,7 +125,7 @@ const Dashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.slice(0, 5).map((item) => (
+                  {history.map((item) => (
                     <tr key={item.id} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
                       <td className="py-4 font-medium">{item.repo_name}</td>
                       <td className="py-4">
