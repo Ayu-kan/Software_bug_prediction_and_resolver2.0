@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, GitBranch, Settings, LogOut, ShieldAlert,
+  LayoutDashboard, GitBranch, Settings, LogOut,
   User, Menu, X, KeyRound, Users, History, ChevronDown, Check, Building2
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';

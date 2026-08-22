@@ -17,6 +17,7 @@ import joblib
 import pandas as pd
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
+from fastapi import FastAPI
 
 # Add workspace path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -488,3 +489,5 @@ def handle_get_file_content(file_path: str, repo_path: Optional[str] = None):
         return {"success": False, "error": f"File not found at path: {file_path}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+app = FastAPI()

@@ -3,7 +3,7 @@ import type {
   RegisterRequest, LoginRequest, ConfigRequest, AnalysisRequest, ResolveRequest
 } from '../types';
 
-const API_BASE = 'http://localhost:8000'; // FastAPI dev server
+const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:8000');
 
 const api = axios.create({
   baseURL: API_BASE,

@@ -10,9 +10,19 @@ real-time activity auditing, and isolated analysis history.
 import os
 import sqlite3
 import json
+import shutil
 from typing import Optional, List, Dict, Any
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    DB_PATH = os.path.join("/tmp", "app.db")
+    local_template = os.path.join(os.path.dirname(__file__), "app.db")
+    if not os.path.exists(DB_PATH) and os.path.exists(local_template):
+        try:
+            shutil.copy2(local_template, DB_PATH)
+        except Exception:
+            pass
+else:
+    DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "app.db"))
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
