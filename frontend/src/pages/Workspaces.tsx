@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Users, User, Plus, ShieldCheck, Mail, Check, Building2,
-  Copy, CheckCircle2, AlertCircle, X, Clock, ShieldAlert,
+  Copy, CheckCircle2, AlertCircle, X, Clock,
   Loader2, Trash2
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
@@ -52,7 +52,7 @@ export const Workspaces: React.FC = () => {
       if (invitesRes.success && Array.isArray(invitesRes.invitations)) {
         setUserInvites(invitesRes.invitations);
       }
-    } catch {}
+    } catch { }
   };
 
   // Load outgoing invitations if admin of active workspace
@@ -66,7 +66,7 @@ export const Workspaces: React.FC = () => {
       if (res.success && Array.isArray(res.invitations)) {
         setWsPendingInvites(res.invitations);
       }
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -152,7 +152,7 @@ export const Workspaces: React.FC = () => {
           }
         }
       }
-    } catch {} finally {
+    } catch { } finally {
       setLoadingInvites(false);
     }
   };
@@ -164,12 +164,12 @@ export const Workspaces: React.FC = () => {
       if (res.success) {
         setWsPendingInvites(prev => prev.filter(i => i.id !== inviteId));
       }
-    } catch {}
+    } catch { }
   };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
@@ -262,11 +262,10 @@ export const Workspaces: React.FC = () => {
         <button
           type="button"
           onClick={() => handleSelectWorkspace(null)}
-          className={`relative px-5 py-2.5 text-xs font-mono font-bold transition-all flex items-center space-x-2 rounded-t-xl cursor-pointer ${
-            activeWorkspace === null
+          className={`relative px-5 py-2.5 text-xs font-mono font-bold transition-all flex items-center space-x-2 rounded-t-xl cursor-pointer ${activeWorkspace === null
               ? 'text-[#c6f135] bg-[#121212] border-t border-x border-[#2a2a2a]'
               : 'text-[#a0a0a0] hover:text-white hover:bg-[#141414]'
-          }`}
+            }`}
         >
           <User size={14} />
           <span>Personal Workspace</span>
@@ -284,11 +283,10 @@ export const Workspaces: React.FC = () => {
               setShowCreateModal(true);
             }
           }}
-          className={`relative px-5 py-2.5 text-xs font-mono font-bold transition-all flex items-center space-x-2 rounded-t-xl cursor-pointer ${
-            activeWorkspace !== null
+          className={`relative px-5 py-2.5 text-xs font-mono font-bold transition-all flex items-center space-x-2 rounded-t-xl cursor-pointer ${activeWorkspace !== null
               ? 'text-[#c6f135] bg-[#121212] border-t border-x border-[#2a2a2a]'
               : 'text-[#a0a0a0] hover:text-white hover:bg-[#141414]'
-          }`}
+            }`}
         >
           <Users size={14} />
           <span>Collaborative Workspaces ({userWorkspaces.length})</span>
@@ -396,11 +394,10 @@ export const Workspaces: React.FC = () => {
                 <div
                   key={ws.id}
                   onClick={() => handleSelectWorkspace(ws)}
-                  className={`p-5 rounded-2xl bg-[#121212] border transition-all cursor-pointer flex flex-col justify-between h-48 glass-card ${
-                    isSelected
+                  className={`p-5 rounded-2xl bg-[#121212] border transition-all cursor-pointer flex flex-col justify-between h-48 glass-card ${isSelected
                       ? 'border-[#c6f135] shadow-[0_0_20px_rgba(198,241,53,0.15)]'
                       : 'border-[#2a2a2a] hover:border-[#c6f135]/40'
-                  }`}
+                    }`}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
