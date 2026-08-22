@@ -38,15 +38,15 @@ const PROVIDERS: { id: Provider; label: string; description: string; placeholder
 ];
 
 const MODELS: Record<Provider, string[]> = {
-  openai: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  gemini: ['gemini-1.5-pro', 'gemini-pro', 'gemini-1.5-flash'],
-  groq: ['llama3-8b-8192', 'llama3-70b-8192', 'mixtral-8x7b-32768'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+  gemini: ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+  groq: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
 };
 
 const DEFAULT_MODELS: Record<Provider, string> = {
   openai: 'gpt-4o',
-  gemini: 'gemini-1.5-pro',
-  groq: 'llama3-8b-8192',
+  gemini: 'gemini-1.5-flash',
+  groq: 'llama-3.1-8b-instant',
 };
 
 const Settings = () => {
@@ -95,14 +95,15 @@ const Settings = () => {
     setTestResult(null);
     setErrorMsg('');
     try {
-      const res = await analysisAPI.testConnection(selectedProvider, activeKey.trim(), selectedModel);
+      const res = await analysisAPI.testConnection(selectedProvider, activeKey.trim(), selectedModel, user?.id);
       if (res.success) {
         setTestResult({ success: true, message: `Connected successfully via ${selectedProvider} (${selectedModel})` });
       } else {
-        setTestResult({ success: false, message: res.error || res.message || 'Connection failed.' });
+        setTestResult({ success: false, message: res.error || res.message || 'Connection failed. Please verify the API key.' });
       }
-    } catch {
-      setTestResult({ success: false, message: 'Network error. Could not reach the AI provider.' });
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.error || err.response?.data?.detail || err.message || 'Network error. Could not reach the AI provider.';
+      setTestResult({ success: false, message: msg });
     } finally {
       setTesting(false);
     }

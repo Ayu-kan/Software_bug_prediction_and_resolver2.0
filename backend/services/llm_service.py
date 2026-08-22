@@ -24,20 +24,20 @@ API_KEY_PATTERNS = [
 PROVIDER_DEFAULTS = {
     "openai": {
         "url": "https://api.openai.com/v1/chat/completions",
-        "default_model": "gpt-3.5-turbo",
-        "models": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "default_model": "gpt-4o",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
         "key_prefix": "sk-",
     },
     "gemini": {
         "url": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        "default_model": "gemini-pro",
-        "models": ["gemini-1.5-pro", "gemini-pro", "gemini-1.5-flash"],
+        "default_model": "gemini-1.5-flash",
+        "models": ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"],
         "key_prefix": "AIzaSy",
     },
     "groq": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
-        "default_model": "llama3-8b-8192",
-        "models": ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"],
+        "default_model": "llama-3.1-8b-instant",
+        "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
         "key_prefix": "gsk_",
     },
 }
@@ -63,8 +63,20 @@ def redact_secrets(code_text: str) -> str:
 
 
 def _classify_error(status_code: int, body: str) -> str:
-    """Map HTTP status codes to user-friendly error messages."""
-    if status_code == 401:
+    """Map HTTP status codes and response bodies to user-friendly error messages."""
+    if body:
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict) and "error" in parsed:
+                err = parsed["error"]
+                if isinstance(err, dict) and "message" in err:
+                    return str(err["message"])
+                elif isinstance(err, str):
+                    return err
+        except Exception:
+            pass
+
+    if status_code in (401, 400):
         return ERROR_MESSAGES["invalid_api_key"]
     if status_code == 403:
         return ERROR_MESSAGES["auth_failed"]
@@ -85,6 +97,8 @@ class LLMSolutionEngine:
         self.provider = (provider or "openai").lower()
         provider_cfg = PROVIDER_DEFAULTS.get(self.provider, PROVIDER_DEFAULTS["openai"])
         self.model = (model or "").strip() or provider_cfg["default_model"]
+        if self.provider == "gemini" and self.model == "gemini-pro":
+            self.model = "gemini-1.5-flash"
 
     def has_api_key(self) -> bool:
         return bool(self.api_key)
@@ -180,7 +194,10 @@ class LLMSolutionEngine:
         """
         try:
             if self.provider == "gemini":
-                url = PROVIDER_DEFAULTS["gemini"]["url"].format(model=self.model)
+                model_name = self.model
+                if model_name == "gemini-pro":
+                    model_name = "gemini-1.5-flash"
+                url = PROVIDER_DEFAULTS["gemini"]["url"].format(model=model_name)
                 url = f"{url}?key={self.api_key}"
                 headers = {"Content-Type": "application/json"}
                 body = json.dumps({
@@ -206,9 +223,25 @@ class LLMSolutionEngine:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 if self.provider == "gemini":
-                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        prompt_feedback = data.get("promptFeedback", {})
+                        block_reason = prompt_feedback.get("blockReason")
+                        if block_reason:
+                            raise Exception(f"Gemini blocked the request: {block_reason}")
+                        raise Exception("Gemini returned empty candidates.")
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if not parts:
+                        finish_reason = candidates[0].get("finishReason")
+                        if finish_reason:
+                            raise Exception(f"Gemini stopped generation: {finish_reason}")
+                        raise Exception("Gemini response contained no content.")
+                    return parts[0].get("text", "")
                 else:
-                    return data["choices"][0]["message"]["content"]
+                    choices = data.get("choices", [])
+                    if not choices:
+                        raise Exception("AI provider returned empty choices.")
+                    return choices[0]["message"]["content"]
 
         except urllib.error.HTTPError as e:
             body_text = ""
@@ -221,4 +254,4 @@ class LLMSolutionEngine:
         except urllib.error.URLError:
             raise Exception(ERROR_MESSAGES["network_error"])
         except Exception as e:
-            raise Exception(f"{ERROR_MESSAGES['generation_failed']}: {str(e)}")
+            raise Exception(str(e))

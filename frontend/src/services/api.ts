@@ -36,8 +36,8 @@ export const workspaceAPI = {
 export const analysisAPI = {
   run: (data: AnalysisRequest) => api.post('/analysis/run', data).then(r => r.data),
   resolve: (data: ResolveRequest) => api.post('/analysis/resolve', data).then(r => r.data),
-  testConnection: (provider: string, apiKey: string, model?: string) =>
-    api.post('/analysis/test-connection', { provider, api_key: apiKey, model }).then(r => r.data),
+  testConnection: (provider: string, apiKey: string, model?: string, userId?: number) =>
+    api.post('/analysis/test-connection', { provider, api_key: apiKey, model, user_id: userId }).then(r => r.data),
   getHistory: (userId: number, workspaceId?: number | null) =>
     api.get(`/analysis/history/${userId}`, { params: { workspace_id: workspaceId || undefined } }).then(r => r.data),
   getLatest: (userId: number, workspaceId?: number | null) =>

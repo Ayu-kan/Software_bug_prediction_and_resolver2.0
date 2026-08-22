@@ -119,6 +119,7 @@ class TestConnectionRequest(BaseModel):
     provider: str
     api_key: str
     model: Optional[str] = None
+    user_id: Optional[int] = None
 
 # ----------------- Auth & Config Handlers -----------------
 
@@ -132,7 +133,7 @@ def handle_config(req: ConfigRequest):
     return update_user_llm_config(req.user_id, req.provider, req.api_key, req.all_keys)
 
 def handle_get_config(user_id: int):
-    return get_user_llm_config(user_id)
+    return get_user_llm_config(user_id, masked=True)
 
 # ----------------- Workspace & RBAC Handlers -----------------
 
@@ -406,7 +407,7 @@ def handle_resolve(req: ResolveRequest):
         if role == "viewer":
             return {"success": False, "error": "permission_denied", "message": "Viewers have read-only access and cannot generate AI fixes."}
 
-    config = get_user_llm_config(req.user_id) if req.user_id else {"llm_provider": "openai", "llm_api_key": ""}
+    config = get_user_llm_config(req.user_id, masked=False) if req.user_id else {"llm_provider": "openai", "llm_api_key": ""}
     api_key = (config.get("llm_api_key") or "").strip()
     provider = config.get("llm_provider", "openai")
 
@@ -461,8 +462,14 @@ def handle_get_solutions(analysis_id: Optional[int] = None, file_path: Optional[
 
 def handle_test_connection(req: TestConnectionRequest):
     api_key = (req.api_key or "").strip()
+    if (not api_key or api_key.startswith("••") or api_key == "••••••••") and req.user_id:
+        cfg = get_user_llm_config(req.user_id, masked=False)
+        keys_map = cfg.get("keys", {})
+        api_key = keys_map.get(req.provider) or (cfg.get("llm_api_key") if cfg.get("llm_provider") == req.provider else "")
+        api_key = (api_key or "").strip()
+
     if not api_key:
-        return {"success": False, "error": "api_key_required", "message": "No API key provided."}
+        return {"success": False, "error": "api_key_required", "message": "No API key provided. Please enter a valid API key."}
     llm = LLMSolutionEngine(api_key=api_key, provider=req.provider, model=req.model)
     return llm.test_connection()
 

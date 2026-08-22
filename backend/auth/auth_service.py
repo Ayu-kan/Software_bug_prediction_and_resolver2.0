@@ -93,7 +93,7 @@ def update_user_llm_config(user_id: int, provider: str, api_key: str, all_keys: 
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT llm_keys_json FROM users WHERE id = ?", (user_id,))
+    cursor.execute("SELECT llm_keys_json, llm_api_key FROM users WHERE id = ?", (user_id,))
     row = cursor.fetchone()
     current_keys = {"openai": "", "gemini": "", "groq": ""}
     if row and row["llm_keys_json"]:
@@ -104,20 +104,25 @@ def update_user_llm_config(user_id: int, provider: str, api_key: str, all_keys: 
                     current_keys[p] = decrypt_api_key(k) if k else ""
         except Exception:
             pass
+    if row and row["llm_api_key"] and not current_keys.get(provider):
+        current_keys[provider] = decrypt_api_key(row["llm_api_key"])
             
     if all_keys and isinstance(all_keys, dict):
         for p, k in all_keys.items():
-            if k != MASKED_KEY:
-                current_keys[p] = k
+            if k and not k.startswith("••") and k != MASKED_KEY:
+                current_keys[p] = k.strip()
     else:
-        if api_key != MASKED_KEY:
-            current_keys[provider] = api_key
+        if api_key and not api_key.startswith("••") and api_key != MASKED_KEY:
+            current_keys[provider] = api_key.strip()
+        elif api_key == "":
+            current_keys[provider] = ""
 
     # Encrypt keys for storage
     encrypted_keys_json = json.dumps({
         p: encrypt_api_key(k) if k else "" for p, k in current_keys.items()
     })
-    encrypted_active_key = encrypt_api_key(current_keys.get(provider, api_key))
+    active_raw_key = current_keys.get(provider, "")
+    encrypted_active_key = encrypt_api_key(active_raw_key)
         
     cursor.execute(
         "UPDATE users SET llm_provider = ?, llm_api_key = ?, llm_keys_json = ? WHERE id = ?",
@@ -132,7 +137,7 @@ def update_user_llm_config(user_id: int, provider: str, api_key: str, all_keys: 
         "keys": {p: (MASKED_KEY if k else "") for p, k in current_keys.items()}
     }
 
-def get_user_llm_config(user_id: int) -> dict:
+def get_user_llm_config(user_id: int, masked: bool = False) -> dict:
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT llm_provider, llm_api_key, llm_keys_json FROM users WHERE id = ?", (user_id,))
@@ -141,18 +146,29 @@ def get_user_llm_config(user_id: int) -> dict:
     
     keys_dict = {"openai": "", "gemini": "", "groq": ""}
     if row:
+        active_prov = row["llm_provider"] or "openai"
         try:
             if row["llm_keys_json"]:
                 parsed = json.loads(row["llm_keys_json"])
                 if isinstance(parsed, dict):
                     for p, k in parsed.items():
                         decrypted = decrypt_api_key(k) if k else ""
-                        keys_dict[p] = MASKED_KEY if decrypted else ""
+                        if masked:
+                            keys_dict[p] = MASKED_KEY if decrypted else ""
+                        else:
+                            keys_dict[p] = decrypted
         except Exception:
             pass
-        active_prov = row["llm_provider"] or "openai"
+            
         raw_key = decrypt_api_key(row["llm_api_key"]) if row["llm_api_key"] else ""
-        active_key = keys_dict.get(active_prov) or (MASKED_KEY if raw_key else "")
+        if not keys_dict.get(active_prov) and raw_key:
+            keys_dict[active_prov] = MASKED_KEY if masked else raw_key
+
+        if masked:
+            active_key = keys_dict.get(active_prov) or (MASKED_KEY if raw_key else "")
+        else:
+            active_key = keys_dict.get(active_prov) or raw_key
+
         return {
             "llm_provider": active_prov,
             "llm_api_key": active_key,
