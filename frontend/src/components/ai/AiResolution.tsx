@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import {
+  X, Sparkles, Loader2, Check, Copy, AlertCircle,
+  FileText, CheckCircle, GitCompare, Lock, Settings as SettingsIcon,
+  KeyRound
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { X, Sparkles, Loader2, Check, Copy, AlertCircle, ShieldAlert, Code2, FileText, CheckCircle, GitCompare, Lock, Settings } from 'lucide-react';
 import { analysisAPI } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import CodeDiffView from '../code/CodeDiffView';
@@ -19,8 +23,30 @@ export interface SolutionDetails {
   sanitized_code?: string;
 }
 
+const sanitizeErrorMessage = (rawError: any): string => {
+  if (!rawError) return 'An unexpected error occurred during AI solution generation.';
+  const str = typeof rawError === 'string' ? rawError : (rawError.message || rawError.detail || String(rawError));
+  
+  if (str.includes('ascii') || str.includes('codec') || str.includes('ordinal not in range') || str.includes('Unicode')) {
+    return 'AI resolution failed due to invalid API key formatting or encoding. Please re-enter your API key in Settings.';
+  }
+  if (str.includes('api_key_required') || str.includes('No API key')) {
+    return 'No active API key configured. Please configure your API key in Settings to use AI Auto-Fix.';
+  }
+  if (str.includes('rate_limit') || str.includes('429')) {
+    return 'AI provider rate limit reached. Please wait a moment or select a different model in Settings.';
+  }
+  if (str.includes('invalid_api_key') || str.includes('Incorrect API key') || str.includes('401')) {
+    return 'The configured API key was rejected by the provider. Please verify your key in Settings.';
+  }
+  if (str.length > 120 && (str.includes('Traceback') || str.includes('File ') || str.includes('Exception'))) {
+    return 'AI resolution request encountered a server error. Please verify your API key and connection in Settings.';
+  }
+  return str;
+};
+
 const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
-  const { user, llmConfig, getActiveApiKey } = useAuthStore();
+  const { user, llmConfig, getActiveApiKey, activeWorkspace, getCurrentRole } = useAuthStore();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [solutionData, setSolutionData] = useState<SolutionDetails | string | null>(null);
@@ -30,13 +56,20 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
 
   const activeKey = getActiveApiKey();
   const hasApiKey = Boolean(activeKey);
+  const userRole = getCurrentRole();
+  const isViewer = userRole === 'viewer';
 
   const generateSolution = async () => {
     if (!user) return;
     if (!hasApiKey) {
-      setError('No API key configured. Please go to Settings to add your API key.');
+      setError('No API key configured. Please go to Settings to configure your OpenAI, Gemini, or Groq API key.');
       return;
     }
+    if (isViewer) {
+      setError('You have a Viewer role in this workspace and cannot generate AI fixes.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     
@@ -47,18 +80,20 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
         risk_factors: file.risk_cause_description,
         ml_probability: file.ml_probability,
         user_id: user.id,
+        workspace_id: activeWorkspace?.id || null,
+        analysis_id: file.analysis_id || null,
         row_data: file
       });
       
       if (res.success && res.solution) {
         setSolutionData(res.solution);
       } else if (res.error === 'api_key_required') {
-        setError('No API key configured on the server. Please save your API key in Settings.');
+        setError(`No API key configured for ${llmConfig?.provider?.toUpperCase() || 'AI'}. Please save your API key in Settings.`);
       } else {
-        setError(res.message || res.error || 'Failed to generate solution.');
+        setError(sanitizeErrorMessage(res.message || res.error || 'Failed to generate solution.'));
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'An unexpected error occurred during solution generation.');
+      setError(sanitizeErrorMessage(err.response?.data?.message || err.response?.data?.error || err.response?.data?.detail || err));
     } finally {
       setLoading(false);
     }
@@ -87,7 +122,6 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
     }
   };
 
-  // Determine language for syntax highlighting
   const ext = file.file?.split('.').pop()?.toLowerCase();
   let language = 'javascript';
   if (ext === 'py') language = 'python';
@@ -105,211 +139,231 @@ const AiResolution: React.FC<AiResolutionProps> = ({ file, onClose }) => {
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border/50 bg-secondary/30">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 truncate">
           <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400 border border-purple-500/20">
             <Sparkles size={20} />
           </div>
-          <div>
-            <h3 className="font-bold text-lg leading-none">AI Bug Resolution & Code Diff</h3>
-            <p className="text-xs text-muted-foreground mt-1 font-mono truncate max-w-md">{file.file}</p>
+          <div className="truncate">
+            <h3 className="font-bold text-base truncate">BugRiskIntel AI Resolution</h3>
+            <p className="text-xs text-muted-foreground font-mono truncate">{file.file}</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors">
-          <X size={20} />
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 hover:bg-secondary rounded-full transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          <X size={18} />
         </button>
       </div>
 
-      {/* Body Content */}
-      <div className="p-6 overflow-y-auto flex-1 flex flex-col space-y-6">
-        
-        {/* Risk Context Header Card */}
-        <div className="p-4 rounded-xl border border-border bg-secondary/20 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center space-x-1.5">
-              <ShieldAlert size={14} className="text-destructive" />
-              <span>Detected Risk Factors</span>
+      {/* Provider Info Banner */}
+      <div className="px-5 py-2.5 bg-secondary/20 border-b border-border/30 flex items-center justify-between text-xs">
+        <div className="flex items-center space-x-2">
+          <span className="text-muted-foreground">Provider:</span>
+          <span className="font-mono font-bold capitalize text-primary">
+            {llmConfig?.provider || 'OpenAI'} {llmConfig?.model ? `(${llmConfig.model})` : ''}
+          </span>
+          {activeWorkspace && (
+            <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[10px]">
+              Workspace: {activeWorkspace.name}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-destructive/15 text-destructive border border-destructive/20">
-              {(file.ml_probability * 100).toFixed(1)}% Risk
-            </span>
-          </div>
-          <p className="text-sm font-medium text-foreground">{file.risk_cause_description}</p>
+          )}
         </div>
 
-        {/* No API Key — Locked State */}
-        {!hasApiKey && !solutionData && !loading && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border border-dashed border-amber-500/30 rounded-xl bg-amber-500/5">
-            <div className="p-4 bg-amber-500/10 rounded-full text-amber-400 mb-4 border border-amber-500/20">
-              <Lock size={40} />
+        {!hasApiKey && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate('/settings');
+            }}
+            className="flex items-center space-x-1 text-yellow-400 hover:underline font-semibold cursor-pointer"
+          >
+            <KeyRound size={12} />
+            <span>Configure API Key</span>
+          </button>
+        )}
+      </div>
+
+      {/* Main Body */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Missing API Key Warning */}
+        {!hasApiKey && (
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl space-y-2">
+            <div className="flex items-center space-x-2 text-yellow-400 font-bold text-sm">
+              <KeyRound size={17} />
+              <span>Personal API Key Required</span>
             </div>
-            <h3 className="text-xl font-bold mb-2 text-amber-300">API Key Required</h3>
-            <p className="text-muted-foreground text-sm max-w-sm mb-6 leading-relaxed">
-              Please configure your <strong>{llmConfig?.provider || 'AI provider'}</strong> API key in Settings before using AI analysis, bug explanation, or AI code generation features.
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              To generate automated bug fixes and code refactoring, please configure your personal API key in Settings. Your key is stored securely with encryption.
             </p>
             <button
-              onClick={() => { onClose(); navigate('/settings'); }}
-              className="bg-amber-500 hover:bg-amber-600 text-black px-6 py-2.5 rounded-xl font-semibold flex items-center space-x-2 transition-all shadow-lg shadow-amber-900/20"
+              type="button"
+              onClick={() => {
+                onClose();
+                navigate('/settings');
+              }}
+              className="mt-2 px-3.5 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors cursor-pointer"
             >
-              <Settings size={18} />
-              <span>Go to Settings →</span>
+              <SettingsIcon size={14} />
+              <span>Open Settings to Add API Key</span>
             </button>
           </div>
         )}
 
-        {/* Initial Prompt — key is present */}
-        {hasApiKey && !solutionData && !loading && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border border-dashed border-border rounded-xl bg-secondary/10">
-            <div className="p-4 bg-purple-500/10 rounded-full text-purple-400 mb-4 border border-purple-500/20">
-              <Sparkles size={40} />
-            </div>
-            <h3 className="text-xl font-bold mb-2">Generate AI Refactored Fix</h3>
-            <p className="text-muted-foreground text-sm max-w-md mb-1 leading-relaxed">
-              Use <strong className="capitalize">{llmConfig?.provider || 'AI'}</strong>
-              {llmConfig?.model && <span className="text-muted-foreground/70"> ({llmConfig.model})</span>} to generate a patch addressing high complexity, security risks, and bug-prone patterns.
-            </p>
-            <p className="text-xs text-green-400 mb-6 flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
-              <span>API key active</span>
-            </p>
-
-            <button
-              onClick={generateSolution}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 transition-all shadow-lg shadow-purple-900/30 hover:scale-105"
-            >
-              <Sparkles size={18} />
-              <span>Analyze & Generate Code Fix</span>
-            </button>
-
-            {error && (
-              <div className="mt-6 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-sm flex items-center space-x-2 max-w-sm">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+        {/* Viewer Role Warning */}
+        {isViewer && (
+          <div className="p-3 bg-secondary border border-border rounded-xl flex items-center space-x-2 text-xs text-muted-foreground">
+            <Lock size={16} />
+            <span>You have a Viewer role in this workspace. Generating new AI fixes is restricted to Editors and Admins.</span>
           </div>
         )}
 
-        {/* Loading Spinner */}
-        {loading && (
-          <div className="flex-1 flex flex-col items-center justify-center space-y-4 py-16">
-            <Loader2 className="animate-spin text-purple-400" size={44} />
-            <div className="text-center">
-              <p className="font-semibold text-lg">Generating Code Patch</p>
-              <p className="text-muted-foreground text-sm animate-pulse mt-1">Comparing source code AST and constructing refactored diff...</p>
-            </div>
+        {/* Sanitized User-Friendly Error Alert */}
+        {error && (
+          <div className="p-4 bg-destructive/15 border border-destructive/30 text-destructive rounded-xl text-xs flex items-start space-x-2.5 leading-relaxed">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <span>{error}</span>
           </div>
         )}
 
-        {/* Solution View Container */}
-        {solutionData && !loading && (
-          <div className="flex-1 flex flex-col space-y-4 animate-in fade-in duration-300">
-            
-            {/* View Selector Tabs */}
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center space-x-2 overflow-x-auto">
-                <button
-                  onClick={() => setActiveTab('diff')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
-                    activeTab === 'diff' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-muted-foreground hover:bg-secondary'
-                  }`}
-                >
-                  <GitCompare size={15} />
-                  <span>Side-by-Side Diff</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('code')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
-                    activeTab === 'code' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-muted-foreground hover:bg-secondary'
-                  }`}
-                >
-                  <Code2 size={15} />
-                  <span>Fixed Code</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('fix')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
-                    activeTab === 'fix' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-muted-foreground hover:bg-secondary'
-                  }`}
-                >
-                  <CheckCircle size={15} />
-                  <span>Fix Steps</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('summary')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
-                    activeTab === 'summary' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'text-muted-foreground hover:bg-secondary'
-                  }`}
-                >
-                  <FileText size={15} />
-                  <span>Summary & Impacts</span>
-                </button>
-              </div>
-
+        {/* Solution Content */}
+        {solutionData ? (
+          <div className="space-y-5">
+            {/* Tabs */}
+            <div className="flex space-x-1 border-b border-border/50 pb-2">
               <button
-                onClick={handleCopyCode}
-                className="flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground transition-colors border border-border"
+                type="button"
+                onClick={() => setActiveTab('diff')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  activeTab === 'diff' ? 'bg-primary/20 text-primary border border-primary/30' : 'text-muted-foreground hover:bg-secondary'
+                }`}
               >
-                {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                <span>{copied ? 'Copied!' : 'Copy Code'}</span>
+                <GitCompare size={14} />
+                <span>Side-by-Side Diff</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('fix')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  activeTab === 'fix' ? 'bg-primary/20 text-primary border border-primary/30' : 'text-muted-foreground hover:bg-secondary'
+                }`}
+              >
+                <CheckCircle size={14} />
+                <span>Suggested Fix</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('summary')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors ${
+                  activeTab === 'summary' ? 'bg-primary/20 text-primary border border-primary/30' : 'text-muted-foreground hover:bg-secondary'
+                }`}
+              >
+                <FileText size={14} />
+                <span>Issue Summary</span>
               </button>
             </div>
 
-            {/* Tab Contents */}
+            {/* Tab: Diff */}
             {activeTab === 'diff' && (
-              <div className="flex-1 h-[450px]">
-                <CodeDiffView
-                  originalCode={file.last_source_code || ''}
-                  modifiedCode={parsedSolution.improved_code || ''}
-                  language={language}
-                />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase">Original vs AI Improved Code</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="px-2.5 py-1 bg-secondary hover:bg-secondary/80 border border-border rounded-lg text-xs flex items-center space-x-1 transition-colors cursor-pointer"
+                  >
+                    {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                    <span>{copied ? 'Copied' : 'Copy Fixed Code'}</span>
+                  </button>
+                </div>
+                <div className="border border-border rounded-xl overflow-hidden shadow-inner">
+                  <CodeDiffView
+                    originalCode={file.last_source_code || '// Original source unavailable'}
+                    modifiedCode={parsedSolution.improved_code || '// AI modified code'}
+                    language={language}
+                  />
+                </div>
               </div>
             )}
 
-            {activeTab === 'code' && (
-              <div className="flex-1 bg-[#1e1e1e] rounded-xl border border-border p-4 overflow-auto font-mono text-xs leading-relaxed text-gray-200">
-                <pre className="whitespace-pre-wrap">
-                  {parsedSolution.improved_code || '// No code snippet returned'}
-                </pre>
-              </div>
-            )}
-
+            {/* Tab: Fix */}
             {activeTab === 'fix' && (
-              <div className="flex-1 bg-secondary/20 rounded-xl border border-border p-6 overflow-auto space-y-4 text-sm">
-                <h4 className="font-semibold text-base text-purple-400 flex items-center space-x-2">
-                  <CheckCircle size={18} />
-                  <span>Recommended Refactoring Steps</span>
-                </h4>
-                <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
-                  {parsedSolution.suggested_fix || 'No detailed fix instructions provided.'}
+              <div className="space-y-4">
+                <div className="glass p-5 rounded-xl border border-border space-y-2">
+                  <h4 className="font-bold text-sm text-foreground">Remediation Plan</h4>
+                  <div className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                    {parsedSolution.suggested_fix || 'No specific fix explanation available.'}
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {activeTab === 'summary' && (
-              <div className="flex-1 bg-secondary/20 rounded-xl border border-border p-6 overflow-auto space-y-6 text-sm">
-                <div>
-                  <h4 className="font-semibold text-base mb-2 text-foreground">Problem Analysis</h4>
-                  <p className="text-muted-foreground leading-relaxed">
-                    {parsedSolution.problem_summary || 'Analysis complete.'}
-                  </p>
-                </div>
                 {parsedSolution.possible_side_effects && (
-                  <div className="pt-4 border-t border-border/50">
-                    <h4 className="font-semibold text-base mb-2 text-yellow-400">Possible Side Effects & Dependent Modules</h4>
-                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  <div className="glass p-5 rounded-xl border border-yellow-500/20 bg-yellow-500/5 space-y-2">
+                    <h4 className="font-bold text-sm text-yellow-400">Potential Side Effects to Watch</h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
                       {parsedSolution.possible_side_effects}
                     </p>
                   </div>
                 )}
               </div>
             )}
+
+            {/* Tab: Summary */}
+            {activeTab === 'summary' && (
+              <div className="glass p-5 rounded-xl border border-border space-y-3">
+                <h4 className="font-bold text-sm text-foreground">Defect & Root Cause Analysis</h4>
+                <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                  {parsedSolution.problem_summary || file.risk_cause_description}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Empty state */
+          <div className="py-16 text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center mx-auto border border-purple-500/20">
+              <Sparkles size={24} />
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-bold text-lg text-foreground">Generate AI Auto-Fix</h4>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                Generate root-cause explanations, targeted patches, and side-by-side diffs using{' '}
+                <strong className="capitalize">{llmConfig?.provider || 'AI'}</strong>.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={generateSolution}
+              disabled={loading || !hasApiKey || isViewer}
+              className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold flex items-center space-x-2 mx-auto transition-all shadow-md shadow-purple-900/30 disabled:opacity-40 cursor-pointer"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              <span>{loading ? 'Consulting LLM Engine...' : 'Generate Auto-Fix Now'}</span>
+            </button>
           </div>
         )}
-
       </div>
+
+      {/* Footer */}
+      {solutionData && (
+        <div className="p-4 border-t border-border/50 bg-secondary/30 flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground font-mono">
+            BugRiskIntel · {llmConfig?.provider?.toUpperCase() || 'AI'}
+          </span>
+          <button
+            type="button"
+            onClick={generateSolution}
+            disabled={loading || !hasApiKey || isViewer}
+            className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors disabled:opacity-40 cursor-pointer"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            <span>Regenerate Solution</span>
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 };

@@ -4,7 +4,7 @@ import type { LlmConfig } from '../store/authStore';
 import { authAPI, analysisAPI } from '../services/api';
 import {
   KeyRound, CheckCircle2, Loader2, Save, Trash2, ShieldCheck,
-  AlertCircle, Zap, Wifi, WifiOff, ChevronDown
+  AlertCircle, Zap, Wifi, WifiOff, ChevronDown, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -66,6 +66,7 @@ const Settings = () => {
 
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -274,20 +275,37 @@ const Settings = () => {
             </div>
           </div>
 
-          {/* API Key Input */}
+          {/* API Key Input with Show/Hide Toggle */}
           <div>
-            <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-              {PROVIDERS.find(p => p.id === selectedProvider)?.label} API Key
-            </label>
-            <input
-              type="password"
-              placeholder={PROVIDERS.find(p => p.id === selectedProvider)?.placeholder || ''}
-              className="w-full bg-secondary/40 border border-border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-              value={activeKey}
-              onChange={(e) => setKeys(prev => ({ ...prev, [selectedProvider]: e.target.value }))}
-            />
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Your key is stored locally in your session and wiped on logout. It is never sent to our servers for any purpose other than routing your AI request.
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                {PROVIDERS.find(p => p.id === selectedProvider)?.label} API Key
+              </label>
+              <span className="text-[10px] text-muted-foreground font-mono">Encrypted Session Storage</span>
+            </div>
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                placeholder={PROVIDERS.find(p => p.id === selectedProvider)?.placeholder || ''}
+                className="w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm pr-11 text-foreground"
+                value={activeKey}
+                onChange={(e) => {
+                  // Sanitize input to strip non-printable/invalid unicode characters
+                  const cleanVal = e.target.value.replace(/[^\x20-\x7E]/g, '');
+                  setKeys(prev => ({ ...prev, [selectedProvider]: cleanVal }));
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground transition-colors"
+                title={showKey ? 'Hide key' : 'Show key'}
+              >
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+              Keys are strictly masked, encrypted, and isolated to your active session. They are never logged or exposed.
             </p>
           </div>
 
