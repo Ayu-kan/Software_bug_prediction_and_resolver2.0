@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Python FastAPI Backend with ML Models and SQLite DB
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: bugpredict-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_PATH=/app/backend/database/app.db
+      - JWT_SECRET=super-secret-bug-prediction-key-2026
+    volumes:
+      - db_data:/app/backend/database
+      - repo_data:/app/repos
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # React Frontend served via Nginx Reverse Proxy
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: bugpredict-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  db_data:
+    driver: local
+  repo_data:
+    driver: local

@@ -27,7 +27,13 @@ from backend.api.app import (
     handle_resolve, handle_get_solutions, handle_test_connection, handle_get_file_content
 )
 
+from backend.database.db import init_db
+
 app = FastAPI(title="Enterprise Bug Risk Intelligence Platform API (v2.0)")
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -218,3 +224,21 @@ def get_file_content(file_path: str, repo_path: Optional[str] = None):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "2.0"}
+
+# ----------------- Production Frontend SPA Serving -----------------
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+if os.path.exists(frontend_dist) and os.path.exists(os.path.join(frontend_dist, "index.html")):
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        target = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.exists(target) and os.path.isfile(target):
+            return FileResponse(target)
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
