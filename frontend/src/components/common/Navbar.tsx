@@ -51,14 +51,12 @@ const Navbar = () => {
   return (
     <header className="sticky top-0 z-40 w-full glass border-b border-border/50 bg-background/80 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-16 gap-4">
           
           {/* Brand & Workspace Switcher */}
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2.5 cursor-pointer" onClick={() => navigate('/')}>
-              <div className="p-2 bg-destructive/10 rounded-lg text-destructive border border-destructive/20 shadow-sm">
-                <ShieldAlert size={22} />
-              </div>
+          <div className="flex items-center space-x-4 shrink-0">
+            <div className="flex items-center space-x-2.5 cursor-pointer shrink-0" onClick={() => navigate('/')}>
+              <img src="/favicon.svg" alt="BugRiskIntel Logo" className="w-8 h-8" />
               <div className="flex flex-col">
                 <span className="text-base font-bold tracking-tight leading-none bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
                   BugRisk<span className="text-destructive">Intel</span>
@@ -70,7 +68,7 @@ const Navbar = () => {
             <div className="hidden sm:block h-5 w-px bg-border/60" />
 
             {/* Workspace Selector Dropdown */}
-            <div className="relative hidden sm:block">
+            <div className="relative hidden sm:block shrink-0">
               <button
                 onClick={() => setWsDropdownOpen(!wsDropdownOpen)}
                 className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-secondary/50 hover:bg-secondary border border-border text-xs font-medium transition-all"
@@ -153,7 +151,7 @@ const Navbar = () => {
           </div>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-1">
+          <nav className="hidden md:flex items-center space-x-1 flex-1 overflow-x-auto min-w-0 hide-scrollbar">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
@@ -173,7 +171,7 @@ const Navbar = () => {
           </nav>
 
           {/* User Profile & Config Chip */}
-          <div className="hidden md:flex items-center space-x-3">
+          <div className="hidden md:flex items-center space-x-3 shrink-0">
             {/* API Key Status Indicator */}
             {hasKey ? (
               <button

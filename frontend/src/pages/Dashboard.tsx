@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { analysisAPI } from '../services/api';
 import { motion } from 'framer-motion';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, ShieldAlert, FileWarning, Activity } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, FileWarning, Activity, History } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 const Dashboard = () => {
@@ -146,8 +146,14 @@ const Dashboard = () => {
               </table>
             </div>
           ) : (
-             <div className="flex-1 flex items-center justify-center">
-              <p className="text-muted-foreground">No recent analyses found.</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-secondary/10 rounded-lg border border-dashed border-border mt-2">
+              <div className="bg-primary/10 p-3 rounded-full text-primary mb-3">
+                <History size={28} />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">This is your first analysis</h3>
+              <p className="text-muted-foreground text-sm max-w-md">
+                Your analysis history will appear here once you run your first analysis. Navigate to the Analysis tab to get started.
+              </p>
             </div>
           )}
         </motion.div>

@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Analysis from './pages/Analysis';
 import Settings from './pages/Settings';
+import Workspaces from './pages/Workspaces';
+import History from './pages/History';
 import Navbar from './components/common/Navbar';
 import ErrorBoundary from './components/common/ErrorBoundary';
 
@@ -36,6 +38,8 @@ function App() {
           
           <Route path="/" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
           <Route path="/analysis" element={<ProtectedRoute><Layout><Analysis /></Layout></ProtectedRoute>} />
+          <Route path="/workspaces" element={<ProtectedRoute><Layout><Workspaces /></Layout></ProtectedRoute>} />
+          <Route path="/history" element={<ProtectedRoute><Layout><History /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
         </Routes>
       </ErrorBoundary>

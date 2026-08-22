@@ -55,9 +55,7 @@ const Login = () => {
 
       <div className="w-full max-w-md glass p-8 rounded-2xl shadow-2xl z-10">
         <div className="flex flex-col items-center mb-8">
-          <div className="p-3 bg-destructive/10 rounded-full mb-4">
-            <ShieldAlert size={32} className="text-destructive" />
-          </div>
+          <img src="/favicon.svg" alt="Bug Risk Intel Logo" className="w-16 h-16 mb-4" />
           <h1 className="text-2xl font-bold tracking-tight">Bug Risk Intel</h1>
           <p className="text-sm text-muted-foreground mt-2">
             {isLoginMode ? 'Welcome back. Sign in to your account.' : 'Create an account to get started.'}

@@ -11,6 +11,8 @@ from backend.auth.security import (
     encrypt_api_key, decrypt_api_key
 )
 
+MASKED_KEY = '••••••••'
+
 def register_user(username: str, email: str, password: str) -> dict:
     conn = get_db()
     cursor = conn.cursor()
@@ -64,15 +66,17 @@ def login_user(username: str, password: str) -> dict:
             parsed = json.loads(user["llm_keys_json"])
             if isinstance(parsed, dict):
                 for p, k in parsed.items():
-                    keys_dict[p] = decrypt_api_key(k) if k else ""
+                    decrypted = decrypt_api_key(k) if k else ""
+                    keys_dict[p] = MASKED_KEY if decrypted else ""
     except Exception:
         pass
     
     # Fallback to active key if present
     active_prov = user["llm_provider"] or "openai"
     raw_active_key = decrypt_api_key(user["llm_api_key"]) if user["llm_api_key"] else ""
-    if raw_active_key and not keys_dict.get(active_prov):
-        keys_dict[active_prov] = raw_active_key
+    masked_active_key = MASKED_KEY if raw_active_key else ""
+    if masked_active_key and not keys_dict.get(active_prov):
+        keys_dict[active_prov] = masked_active_key
     
     return {
         "success": True,
@@ -80,7 +84,7 @@ def login_user(username: str, password: str) -> dict:
         "username": user["username"],
         "email": user["email"],
         "llm_provider": active_prov,
-        "llm_api_key": keys_dict.get(active_prov, raw_active_key),
+        "llm_api_key": keys_dict.get(active_prov, masked_active_key),
         "keys": keys_dict,
         "token": token
     }
@@ -102,9 +106,12 @@ def update_user_llm_config(user_id: int, provider: str, api_key: str, all_keys: 
             pass
             
     if all_keys and isinstance(all_keys, dict):
-        current_keys.update(all_keys)
+        for p, k in all_keys.items():
+            if k != MASKED_KEY:
+                current_keys[p] = k
     else:
-        current_keys[provider] = api_key
+        if api_key != MASKED_KEY:
+            current_keys[provider] = api_key
 
     # Encrypt keys for storage
     encrypted_keys_json = json.dumps({
@@ -122,7 +129,7 @@ def update_user_llm_config(user_id: int, provider: str, api_key: str, all_keys: 
         "success": True,
         "message": "LLM Configuration saved successfully.",
         "provider": provider,
-        "keys": current_keys
+        "keys": {p: (MASKED_KEY if k else "") for p, k in current_keys.items()}
     }
 
 def get_user_llm_config(user_id: int) -> dict:
@@ -139,12 +146,13 @@ def get_user_llm_config(user_id: int) -> dict:
                 parsed = json.loads(row["llm_keys_json"])
                 if isinstance(parsed, dict):
                     for p, k in parsed.items():
-                        keys_dict[p] = decrypt_api_key(k) if k else ""
+                        decrypted = decrypt_api_key(k) if k else ""
+                        keys_dict[p] = MASKED_KEY if decrypted else ""
         except Exception:
             pass
         active_prov = row["llm_provider"] or "openai"
         raw_key = decrypt_api_key(row["llm_api_key"]) if row["llm_api_key"] else ""
-        active_key = keys_dict.get(active_prov) or raw_key
+        active_key = keys_dict.get(active_prov) or (MASKED_KEY if raw_key else "")
         return {
             "llm_provider": active_prov,
             "llm_api_key": active_key,
