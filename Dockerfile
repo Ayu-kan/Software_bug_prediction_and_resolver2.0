@@ -44,7 +44,6 @@ COPY backend/ ./backend/
 COPY src/ ./src/
 COPY models/ ./models/
 COPY data/ ./data/
-COPY repos/ ./repos/
 
 # Copy compiled frontend assets from Stage 1 into backend for unified serving
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
