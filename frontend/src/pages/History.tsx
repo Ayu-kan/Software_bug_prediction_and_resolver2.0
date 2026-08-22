@@ -32,61 +32,12 @@ export const History: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRun, setSelectedRun] = useState<HistoryItem | null>(null);
 
-  // Compatible mock fallback for flawless hackathon demonstration
-  const mockFallbackHistory: HistoryItem[] = [
-    {
-      id: 101,
-      repo_name: 'Software_bug_prediction_and_resolver2.0',
-      repo_url: 'https://github.com/org/Software_bug_prediction_and_resolver2.0',
-      total_files: 48,
-      high_risk_count: 4,
-      analysis_mode: 'Hybrid ML Mode',
-      created_at: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
-      bug_types_detected: ['Auth Token Expiration', 'Unbounded Query', 'Null Dereference'],
-      suggested_fixes_count: 4,
-      full_results_json: [
-        { file: 'backend/auth/security.py', ml_probability: 0.88, cyclomatic_complexity: 14, risk_cause_description: 'Cryptographic fallback key generation lacks entropy check.', suggested_fix: 'Enforce 256-bit PBKDF2 salt and token lifetime constraint.' },
-        { file: 'backend/database/db.py', ml_probability: 0.76, cyclomatic_complexity: 11, risk_cause_description: 'Database connection pool lack of transaction rollback on lock.', suggested_fix: 'Wrap SQLite connection in contextual rollback handler.' },
-        { file: 'src/repo/clone.py', ml_probability: 0.45, cyclomatic_complexity: 6, risk_cause_description: 'Temporary directory cleanup risk on Windows path separator.', suggested_fix: 'Normalize paths with os.path.normpath.' },
-        { file: 'frontend/src/App.tsx', ml_probability: 0.22, cyclomatic_complexity: 4, risk_cause_description: 'Minimal risk structural component.', suggested_fix: 'None required.' },
-      ]
-    },
-    {
-      id: 102,
-      repo_name: 'ecommerce-payment-gateway',
-      repo_url: 'https://github.com/org/ecommerce-payment-gateway',
-      total_files: 32,
-      high_risk_count: 2,
-      analysis_mode: 'AST Deep Scan',
-      created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-      bug_types_detected: ['Race Condition', 'Stripe Webhook Replay'],
-      suggested_fixes_count: 2,
-      full_results_json: [
-        { file: 'services/stripe_webhook.ts', ml_probability: 0.84, cyclomatic_complexity: 16, risk_cause_description: 'Idempotency key check missing prior to balance deduction.', suggested_fix: 'Add atomic Redis idempotency lock with 60s TTL.' },
-        { file: 'models/invoice.py', ml_probability: 0.72, cyclomatic_complexity: 9, risk_cause_description: 'Float division precision error in currency conversion.', suggested_fix: 'Use Decimal integer cents representation.' },
-      ]
-    },
-    {
-      id: 103,
-      repo_name: 'cloud-infra-orchestrator',
-      repo_url: 'https://github.com/org/cloud-infra-orchestrator',
-      total_files: 94,
-      high_risk_count: 6,
-      analysis_mode: 'Hybrid ML Mode',
-      created_at: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
-      bug_types_detected: ['Memory Leak', 'Kube API Rate Limit'],
-      suggested_fixes_count: 5,
-      full_results_json: [
-        { file: 'controller/cluster_scaler.go', ml_probability: 0.91, cyclomatic_complexity: 22, risk_cause_description: 'Goroutine channel leak without cancellation context.', suggested_fix: 'Pass ctx.Done() select handler into worker loop.' },
-      ]
-    }
-  ];
-
   useEffect(() => {
     if (user?.id) {
       setLoading(true);
+      setHistory([]);
       analysisAPI.getHistory(user.id, activeWorkspace?.id).then((res) => {
-        if (res.success && Array.isArray(res.history) && res.history.length > 0) {
+        if (res.success && Array.isArray(res.history)) {
           // Parse JSON if needed
           const formatted = res.history.map((h: any) => ({
             ...h,
@@ -94,16 +45,15 @@ export const History: React.FC = () => {
           }));
           setHistory(formatted);
         } else {
-          // Use realistic fallback history
-          setHistory(mockFallbackHistory);
+          setHistory([]);
         }
         setLoading(false);
       }).catch(() => {
-        setHistory(mockFallbackHistory);
+        setHistory([]);
         setLoading(false);
       });
     } else {
-      setHistory(mockFallbackHistory);
+      setHistory([]);
       setLoading(false);
     }
   }, [user?.id, activeWorkspace?.id]);

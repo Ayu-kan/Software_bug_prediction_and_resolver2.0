@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, Workspace, WorkspaceRole } from "../types";
+import { useAnalysisStore } from './analysisStore';
 
 export interface LlmConfig {
   provider: 'openai' | 'gemini' | 'groq';
@@ -41,32 +42,45 @@ export const useAuthStore = create<AuthState>()(
       userWorkspaces: [],
 
       login: (user, initialConfig) => {
-        const currentConfig = get().llmConfig;
-        const mergedKeys = {
+        // Enforce strict user isolation: clear any stale analysis from memory
+        try {
+          useAnalysisStore.getState().clearAnalysis();
+        } catch {}
+
+        const userKeys = {
           ...DEFAULT_KEYS,
-          ...(currentConfig?.keys || {}),
           ...(initialConfig?.keys || {})
         };
-        const provider = (initialConfig?.provider || currentConfig?.provider || 'openai') as 'openai' | 'gemini' | 'groq';
+        const provider = (initialConfig?.provider || 'openai') as 'openai' | 'gemini' | 'groq';
         
         set({
           user,
           isAuthenticated: true,
+          activeWorkspace: null,
+          userWorkspaces: [],
           llmConfig: {
             provider,
-            keys: mergedKeys,
-            model: initialConfig?.model || currentConfig?.model
+            keys: userKeys,
+            model: initialConfig?.model || undefined
           }
         });
       },
 
-      logout: () => set({
-        user: null,
-        isAuthenticated: false,
-        llmConfig: null,
-        activeWorkspace: null,
-        userWorkspaces: []
-      }),
+      logout: () => {
+        try {
+          useAnalysisStore.getState().clearAnalysis();
+        } catch {}
+        try {
+          localStorage.removeItem('auth-storage-v2');
+        } catch {}
+        set({
+          user: null,
+          isAuthenticated: false,
+          llmConfig: null,
+          activeWorkspace: null,
+          userWorkspaces: []
+        });
+      },
 
       setLlmConfig: (config) => set({ llmConfig: config }),
 
@@ -77,12 +91,13 @@ export const useAuthStore = create<AuthState>()(
       getActiveApiKey: () => {
         const { llmConfig } = get();
         if (!llmConfig || !llmConfig.provider) return '';
-        return (llmConfig.keys?.[llmConfig.provider] || '').trim();
+        const key = (llmConfig.keys?.[llmConfig.provider] || '').trim();
+        return key;
       },
 
       hasApiKey: () => {
         const activeKey = get().getActiveApiKey();
-        return activeKey.length > 0;
+        return Boolean(activeKey && activeKey.length > 0);
       },
 
       getCurrentRole: (): WorkspaceRole => {

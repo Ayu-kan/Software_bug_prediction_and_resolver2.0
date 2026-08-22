@@ -29,7 +29,10 @@ from backend.database.db import (
     save_ai_solution, get_analysis_solutions,
     create_workspace, get_user_workspaces, get_workspace_details,
     get_user_role_in_workspace, add_workspace_member, update_member_role,
-    remove_workspace_member, log_workspace_activity, get_workspace_activities
+    remove_workspace_member, log_workspace_activity, get_workspace_activities,
+    create_workspace_invitation, get_user_pending_invitations,
+    respond_to_workspace_invitation, get_workspace_pending_invitations,
+    cancel_workspace_invitation
 )
 from backend.auth.auth_service import (
     register_user, login_user, update_user_llm_config, get_user_llm_config,
@@ -87,6 +90,10 @@ class InviteMemberRequest(BaseModel):
     invited_by: int
     query: str  # username or email
     role: Optional[str] = "editor"
+
+class RespondInviteRequest(BaseModel):
+    user_id: int
+    action: str  # 'accept' or 'reject'
 
 class UpdateRoleRequest(BaseModel):
     workspace_id: int
@@ -156,23 +163,21 @@ def handle_get_workspace_details(workspace_id: int, user_id: int):
     return {"success": True, "workspace": ws}
 
 def handle_invite_member(req: InviteMemberRequest):
-    actor_role = get_user_role_in_workspace(req.workspace_id, req.invited_by)
-    if actor_role != "admin":
-        return {"success": False, "error": "Only workspace Admins can invite team members."}
-        
-    target_user = find_user_by_query(req.query)
-    if not target_user:
-        return {"success": False, "error": f"No registered user found with username or email '{req.query}'."}
-        
-    role = req.role if req.role in ["admin", "editor", "viewer"] else "editor"
-    success = add_workspace_member(req.workspace_id, target_user["id"], role, actor_id=req.invited_by)
-    if success:
-        return {
-            "success": True,
-            "message": f"Added {target_user['username']} to workspace as {role.capitalize()}.",
-            "member": {"user_id": target_user["id"], "username": target_user["username"], "role": role}
-        }
-    return {"success": False, "error": "Failed to add member to workspace."}
+    return create_workspace_invitation(req.workspace_id, req.invited_by, req.query, req.role or "editor")
+
+def handle_get_user_invitations(user_id: int):
+    invites = get_user_pending_invitations(user_id)
+    return {"success": True, "invitations": invites}
+
+def handle_respond_invitation(invite_id: int, req: RespondInviteRequest):
+    return respond_to_workspace_invitation(invite_id, req.user_id, req.action)
+
+def handle_get_workspace_invitations(workspace_id: int, user_id: int):
+    invites = get_workspace_pending_invitations(workspace_id, user_id)
+    return {"success": True, "invitations": invites}
+
+def handle_cancel_invitation(invite_id: int, user_id: int):
+    return cancel_workspace_invitation(invite_id, user_id)
 
 def handle_update_member_role(req: UpdateRoleRequest):
     actor_role = get_user_role_in_workspace(req.workspace_id, req.actor_id)
@@ -408,8 +413,9 @@ def handle_resolve(req: ResolveRequest):
             return {"success": False, "error": "permission_denied", "message": "Viewers have read-only access and cannot generate AI fixes."}
 
     config = get_user_llm_config(req.user_id, masked=False) if req.user_id else {"llm_provider": "openai", "llm_api_key": ""}
-    api_key = (config.get("llm_api_key") or "").strip()
     provider = config.get("llm_provider", "openai")
+    keys_map = config.get("keys", {})
+    api_key = (keys_map.get(provider) or config.get("llm_api_key") or "").strip()
 
     if not api_key:
         return {

@@ -39,13 +39,13 @@ const PROVIDERS: { id: Provider; label: string; description: string; placeholder
 
 const MODELS: Record<Provider, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  gemini: ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'],
+  gemini: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash-8b'],
   groq: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
 };
 
 const DEFAULT_MODELS: Record<Provider, string> = {
   openai: 'gpt-4o',
-  gemini: 'gemini-1.5-flash',
+  gemini: 'gemini-2.0-flash',
   groq: 'llama-3.1-8b-instant',
 };
 
@@ -189,12 +189,19 @@ const Settings = () => {
       </div>
 
       {/* Overall Status Banner */}
-      {llmConfig && (
-        <div className="mb-5 p-3 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center space-x-2 text-green-400 text-sm">
-          <ShieldCheck size={18} />
+      {llmConfig && Boolean(llmConfig.keys?.[llmConfig.provider]?.trim()) ? (
+        <div className="mb-5 p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center space-x-2.5 text-green-400 text-sm">
+          <ShieldCheck size={18} className="shrink-0" />
           <span>
             <strong className="capitalize">{llmConfig.provider}</strong> is active for this session
-            {llmConfig.model && <span className="text-green-400/70"> · {llmConfig.model}</span>}
+            {llmConfig.model && <span className="text-green-400/80 font-mono text-xs"> ({llmConfig.model})</span>}
+          </span>
+        </div>
+      ) : (
+        <div className="mb-5 p-3.5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-center space-x-2.5 text-yellow-400 text-sm">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>
+            No active AI provider key configured for this session. Enter your API key below to activate AI bug fixes.
           </span>
         </div>
       )}
@@ -231,23 +238,37 @@ const Settings = () => {
         {/* Provider Tabs */}
         <div className="p-6 border-b border-border/50">
           <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mb-3">Select AI Provider</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {PROVIDERS.map((p) => {
-              const hasKey = keys[p.id].trim() !== '';
-              const isActive = selectedProvider === p.id;
+              const hasProviderKey = Boolean(keys[p.id]?.trim());
+              const isSelected = selectedProvider === p.id;
+              const isSessionActive = llmConfig?.provider === p.id && Boolean(llmConfig?.keys?.[p.id]?.trim());
+
               return (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => handleProviderSelect(p.id)}
-                  className={`relative p-4 rounded-xl border text-left transition-all ${
-                    isActive
+                  className={`relative p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                    isSelected
                       ? 'bg-primary/10 border-primary shadow-md shadow-primary/10'
                       : 'bg-secondary/30 border-border hover:bg-secondary/60 hover:border-border/80'
                   }`}
                 >
-                  {/* Key status dot */}
-                  <span className={`absolute top-2.5 right-2.5 w-2 h-2 rounded-full ${hasKey ? 'bg-green-400' : 'bg-secondary border border-border'}`} title={hasKey ? 'Key configured' : 'No key'} />
-                  <p className={`font-bold text-sm ${isActive ? 'text-primary' : 'text-foreground'}`}>{p.label}</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className={`font-bold text-sm ${isSelected ? 'text-primary' : 'text-foreground'}`}>{p.label}</p>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                        isSessionActive
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                          : hasProviderKey
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          : 'bg-[#222] text-[#888] border border-[#333]'
+                      }`}
+                    >
+                      {isSessionActive ? 'Active' : hasProviderKey ? 'Configured' : 'Not Configured'}
+                    </span>
+                  </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">{p.description}</p>
                 </button>
               );

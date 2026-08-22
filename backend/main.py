@@ -17,11 +17,13 @@ from pydantic import BaseModel
 
 from backend.api.app import (
     RegisterRequest, LoginRequest, ConfigRequest, AnalysisRequest, ResolveRequest,
-    TestConnectionRequest, CreateWorkspaceRequest, InviteMemberRequest,
+    TestConnectionRequest, CreateWorkspaceRequest, InviteMemberRequest, RespondInviteRequest,
     UpdateRoleRequest, RemoveMemberRequest,
     handle_register, handle_login, handle_config, handle_get_config,
     handle_create_workspace, handle_get_user_workspaces, handle_get_workspace_details,
-    handle_invite_member, handle_update_member_role, handle_remove_member,
+    handle_invite_member, handle_get_user_invitations, handle_respond_invitation,
+    handle_get_workspace_invitations, handle_cancel_invitation,
+    handle_update_member_role, handle_remove_member,
     handle_get_workspace_activities, handle_analysis, handle_get_latest_analysis,
     handle_get_user_history, handle_get_analysis_details, handle_delete_analysis,
     handle_resolve, handle_get_solutions, handle_test_connection, handle_get_file_content
@@ -126,9 +128,31 @@ async def invite_member_endpoint(req: InviteMemberRequest):
     if res.get("success"):
         await ws_manager.broadcast_to_workspace(
             req.workspace_id,
-            {"type": "member_joined", "data": res.get("member"), "message": res.get("message")}
+            {"type": "invite_created", "data": res.get("invite"), "message": res.get("message")}
         )
     return res
+
+@app.get("/workspaces/invitations/{user_id}")
+def get_user_invitations_endpoint(user_id: int):
+    return handle_get_user_invitations(user_id)
+
+@app.post("/workspaces/invitations/{invite_id}/respond")
+async def respond_invitation_endpoint(invite_id: int, req: RespondInviteRequest):
+    res = handle_respond_invitation(invite_id, req)
+    if res.get("success") and res.get("workspace_id"):
+        await ws_manager.broadcast_to_workspace(
+            res["workspace_id"],
+            {"type": "invite_resolved", "invite_id": invite_id, "action": req.action, "message": res.get("message")}
+        )
+    return res
+
+@app.get("/workspaces/{workspace_id}/invitations")
+def get_workspace_invitations_endpoint(workspace_id: int, user_id: int = Query(...)):
+    return handle_get_workspace_invitations(workspace_id, user_id)
+
+@app.delete("/workspaces/invitations/{invite_id}")
+async def cancel_invitation_endpoint(invite_id: int, user_id: int = Query(...)):
+    return handle_cancel_invitation(invite_id, user_id)
 
 @app.post("/workspaces/update-role")
 async def update_member_role_endpoint(req: UpdateRoleRequest):

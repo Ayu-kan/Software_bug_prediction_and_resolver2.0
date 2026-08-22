@@ -98,3 +98,16 @@ export interface AiSolutionRecord {
   created_at: string;
   username?: string;
 }
+
+export interface WorkspaceInvitation {
+  id: number;
+  workspace_id: number;
+  workspace_name?: string;
+  workspace_description?: string;
+  inviter_username?: string;
+  username?: string;
+  email?: string;
+  role: WorkspaceRole;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  created_at: string;
+}

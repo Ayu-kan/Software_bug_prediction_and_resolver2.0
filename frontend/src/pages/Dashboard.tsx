@@ -23,12 +23,21 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     if (user?.id) {
       setLoading(true);
+      setHistory([]);
       analysisAPI.getHistory(user.id, activeWorkspace?.id).then((res) => {
         if (res.success && Array.isArray(res.history)) {
           setHistory(res.history);
+        } else {
+          setHistory([]);
         }
         setLoading(false);
-      }).catch(() => setLoading(false));
+      }).catch(() => {
+        setHistory([]);
+        setLoading(false);
+      });
+    } else {
+      setHistory([]);
+      setLoading(false);
     }
   }, [user?.id, activeWorkspace?.id]);
 

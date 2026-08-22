@@ -156,13 +156,19 @@ def init_db():
     if "workspace_id" not in a_cols:
         cursor.execute("ALTER TABLE analyses ADD COLUMN workspace_id INTEGER DEFAULT NULL")
 
-    # Auto-migrate ai_solutions table
-    cursor.execute("PRAGMA table_info(ai_solutions)")
-    s_cols = [r["name"] for r in cursor.fetchall()]
-    if "workspace_id" not in s_cols:
-        cursor.execute("ALTER TABLE ai_solutions ADD COLUMN workspace_id INTEGER DEFAULT NULL")
-    if "analysis_id" not in s_cols:
-        cursor.execute("ALTER TABLE ai_solutions ADD COLUMN analysis_id INTEGER DEFAULT NULL")
+    # Auto-migrate workspace_invites table
+    cursor.execute("PRAGMA table_info(workspace_invites)")
+    wi_cols = [r["name"] for r in cursor.fetchall()]
+    if "invited_user_id" not in wi_cols:
+        cursor.execute("ALTER TABLE workspace_invites ADD COLUMN invited_user_id INTEGER DEFAULT NULL")
+    if "username" not in wi_cols:
+        cursor.execute("ALTER TABLE workspace_invites ADD COLUMN username TEXT DEFAULT ''")
+    if "code" not in wi_cols:
+        cursor.execute("ALTER TABLE workspace_invites ADD COLUMN code TEXT DEFAULT ''")
+    if "email" not in wi_cols:
+        cursor.execute("ALTER TABLE workspace_invites ADD COLUMN email TEXT DEFAULT ''")
+    if "status" not in wi_cols:
+        cursor.execute("ALTER TABLE workspace_invites ADD COLUMN status TEXT DEFAULT 'pending'")
     
     conn.commit()
     conn.close()
@@ -502,6 +508,237 @@ def remove_workspace_member(workspace_id: int, target_user_id: int, actor_id: in
         conn.commit()
     conn.close()
     return success
+
+def log_workspace_activity(workspace_id: int, user_id: int, username: str, action_type: str, description: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO workspace_activities (workspace_id, user_id, username, action_type, description) VALUES (?, ?, ?, ?, ?)",
+        (workspace_id, user_id, username, action_type, description)
+    )
+    conn.commit()
+    conn.close()
+
+def create_workspace_invitation(workspace_id: int, invited_by: int, query: str, role: str = "editor") -> dict:
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 1. Verify actor is admin
+    cursor.execute("SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?", (workspace_id, invited_by))
+    actor_row = cursor.fetchone()
+    if not actor_row or actor_row["role"] != "admin":
+        conn.close()
+        return {"success": False, "error": "Only workspace Admins can send invitations."}
+        
+    # 2. Find target user
+    cursor.execute("SELECT id, username, email FROM users WHERE username = ? OR email = ?", (query.strip(), query.strip()))
+    target = cursor.fetchone()
+    if not target:
+        conn.close()
+        return {"success": False, "error": f"No registered user found with username or email '{query}'."}
+        
+    target_id = target["id"]
+    target_uname = target["username"]
+    target_email = target["email"]
+    
+    # 3. Check if already member
+    cursor.execute("SELECT id FROM workspace_members WHERE workspace_id = ? AND user_id = ?", (workspace_id, target_id))
+    if cursor.fetchone():
+        conn.close()
+        return {"success": False, "error": f"'{target_uname}' is already a member of this workspace."}
+        
+    # 4. Check if invite already pending
+    cursor.execute(
+        "SELECT id FROM workspace_invites WHERE workspace_id = ? AND (invited_user_id = ? OR email = ?) AND status = 'pending'",
+        (workspace_id, target_id, target_email)
+    )
+    if cursor.fetchone():
+        conn.close()
+        return {"success": False, "error": f"An invitation is already pending for '{target_uname}'."}
+        
+    # 5. Insert pending invitation
+    invite_role = role if role in ["admin", "editor", "viewer"] else "editor"
+    import uuid
+    code = f"INV-{uuid.uuid4().hex[:8].upper()}"
+    cursor.execute(
+        """
+        INSERT INTO workspace_invites (workspace_id, invited_by, invited_user_id, username, email, role, code, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+        """,
+        (workspace_id, invited_by, target_id, target_uname, target_email, invite_role, code)
+    )
+    invite_id = cursor.lastrowid
+    
+    # 6. Log workspace activity
+    cursor.execute("SELECT username FROM users WHERE id = ?", (invited_by,))
+    inviter_row = cursor.fetchone()
+    inviter_name = inviter_row["username"] if inviter_row else "Admin"
+    
+    cursor.execute(
+        "INSERT INTO workspace_activities (workspace_id, user_id, username, action_type, description) VALUES (?, ?, ?, 'invite_created', ?)",
+        (workspace_id, invited_by, inviter_name, f"Invited {target_uname} to join as {invite_role.capitalize()} (Pending)")
+    )
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "message": f"Invitation sent to {target_uname}. Status is Pending until accepted.",
+        "invite": {
+            "id": invite_id,
+            "workspace_id": workspace_id,
+            "username": target_uname,
+            "role": invite_role,
+            "status": "pending"
+        }
+    }
+
+def get_user_pending_invitations(user_id: int) -> List[Dict[str, Any]]:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, email FROM users WHERE id = ?", (user_id,))
+    u_row = cursor.fetchone()
+    if not u_row:
+        conn.close()
+        return []
+        
+    u_name = u_row["username"]
+    u_email = u_row["email"]
+    
+    cursor.execute(
+        """
+        SELECT wi.id, wi.workspace_id, wi.role, wi.status, wi.created_at,
+               w.name as workspace_name, w.description as workspace_description,
+               u.username as inviter_username
+        FROM workspace_invites wi
+        JOIN workspaces w ON wi.workspace_id = w.id
+        JOIN users u ON wi.invited_by = u.id
+        WHERE (wi.invited_user_id = ? OR wi.username = ? OR wi.email = ?)
+          AND wi.status = 'pending'
+        ORDER BY wi.created_at DESC
+        """,
+        (user_id, u_name, u_email)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def respond_to_workspace_invitation(invite_id: int, user_id: int, action: str) -> dict:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, email FROM users WHERE id = ?", (user_id,))
+    u_row = cursor.fetchone()
+    if not u_row:
+        conn.close()
+        return {"success": False, "error": "User not found."}
+        
+    u_name = u_row["username"]
+    u_email = u_row["email"]
+    
+    cursor.execute(
+        """
+        SELECT wi.id, wi.workspace_id, wi.role, wi.status, w.name as workspace_name
+        FROM workspace_invites wi
+        JOIN workspaces w ON wi.workspace_id = w.id
+        WHERE wi.id = ? AND (wi.invited_user_id = ? OR wi.username = ? OR wi.email = ?) AND wi.status = 'pending'
+        """,
+        (invite_id, user_id, u_name, u_email)
+    )
+    invite = cursor.fetchone()
+    if not invite:
+        conn.close()
+        return {"success": False, "error": "Invitation not found or has already been resolved."}
+        
+    ws_id = invite["workspace_id"]
+    ws_name = invite["workspace_name"]
+    role = invite["role"]
+    
+    if action == "accept":
+        cursor.execute("UPDATE workspace_invites SET status = 'accepted' WHERE id = ?", (invite_id,))
+        cursor.execute(
+            "INSERT OR REPLACE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)",
+            (ws_id, user_id, role)
+        )
+        cursor.execute(
+            "INSERT INTO workspace_activities (workspace_id, user_id, username, action_type, description) VALUES (?, ?, ?, 'member_joined', ?)",
+            (ws_id, user_id, u_name, f"{u_name} accepted the invitation and joined as {role.capitalize()}")
+        )
+        conn.commit()
+        conn.close()
+        return {
+            "success": True,
+            "message": f"Successfully joined '{ws_name}'!",
+            "workspace_id": ws_id,
+            "status": "accepted"
+        }
+    elif action == "reject":
+        cursor.execute("UPDATE workspace_invites SET status = 'rejected' WHERE id = ?", (invite_id,))
+        cursor.execute(
+            "INSERT INTO workspace_activities (workspace_id, user_id, username, action_type, description) VALUES (?, ?, ?, 'invite_rejected', ?)",
+            (ws_id, user_id, u_name, f"{u_name} declined the workspace invitation")
+        )
+        conn.commit()
+        conn.close()
+        return {
+            "success": True,
+            "message": f"Declined invitation to '{ws_name}'.",
+            "workspace_id": ws_id,
+            "status": "rejected"
+        }
+    else:
+        conn.close()
+        return {"success": False, "error": "Invalid action. Use 'accept' or 'reject'."}
+
+def get_workspace_pending_invitations(workspace_id: int, actor_id: int) -> List[Dict[str, Any]]:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?", (workspace_id, actor_id))
+    actor_row = cursor.fetchone()
+    if not actor_row or actor_row["role"] != "admin":
+        conn.close()
+        return []
+        
+    cursor.execute(
+        """
+        SELECT wi.id, wi.workspace_id, wi.invited_user_id, wi.username, wi.email, wi.role, wi.status, wi.created_at,
+               u.username as inviter_username
+        FROM workspace_invites wi
+        JOIN users u ON wi.invited_by = u.id
+        WHERE wi.workspace_id = ? AND wi.status = 'pending'
+        ORDER BY wi.created_at DESC
+        """,
+        (workspace_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def cancel_workspace_invitation(invite_id: int, actor_id: int) -> dict:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT workspace_id, username FROM workspace_invites WHERE id = ? AND status = 'pending'", (invite_id,))
+    inv_row = cursor.fetchone()
+    if not inv_row:
+        conn.close()
+        return {"success": False, "error": "Pending invitation not found."}
+        
+    ws_id = inv_row["workspace_id"]
+    target_uname = inv_row["username"]
+    
+    cursor.execute("SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?", (ws_id, actor_id))
+    actor_row = cursor.fetchone()
+    if not actor_row or actor_row["role"] != "admin":
+        conn.close()
+        return {"success": False, "error": "Only workspace Admins can cancel invitations."}
+        
+    cursor.execute("UPDATE workspace_invites SET status = 'cancelled' WHERE id = ?", (invite_id,))
+    cursor.execute(
+        "INSERT INTO workspace_activities (workspace_id, user_id, username, action_type, description) VALUES (?, ?, 'Admin', 'invite_cancelled', ?)",
+        (ws_id, actor_id, f"Cancelled pending invitation for {target_uname}")
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Invitation cancelled successfully."}
 
 def log_workspace_activity(workspace_id: int, user_id: int, username: str, action_type: str, description: str):
     conn = get_db()

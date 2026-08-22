@@ -17,9 +17,10 @@ export const Navbar: React.FC = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
+  const [pendingInvitesCount, setPendingInvitesCount] = useState(0);
 
   const activeKey = getActiveApiKey();
-  const hasKey = Boolean(activeKey);
+  const hasKey = Boolean(activeKey && activeKey.trim().length > 0);
   const currentRole = getCurrentRole();
 
   useEffect(() => {
@@ -31,6 +32,12 @@ export const Navbar: React.FC = () => {
             const updated = res.workspaces.find((w: Workspace) => w.id === activeWorkspace.id);
             if (updated) setActiveWorkspace(updated);
           }
+        }
+      }).catch(() => {});
+
+      workspaceAPI.getPendingInvitations(user.id).then((res) => {
+        if (res.success && Array.isArray(res.invitations)) {
+          setPendingInvitesCount(res.invitations.length);
         }
       }).catch(() => {});
     }
@@ -48,7 +55,7 @@ export const Navbar: React.FC = () => {
     { to: '/dashboard', label: 'Dashboard', isHash: false },
     { to: '/analysis', label: 'Analysis', isHash: false },
     { to: '/history', label: 'History', isHash: false },
-    { to: '/workspaces', label: 'Workspaces', isHash: false },
+    { to: '/workspaces', label: 'Workspaces', isHash: false, badge: pendingInvitesCount },
   ];
 
   return (
@@ -178,13 +185,18 @@ export const Navbar: React.FC = () => {
                       navigate(link.to);
                     }
                   }}
-                  className={`relative px-3 py-1.5 text-xs font-medium transition-colors tracking-wide ${
+                  className={`relative px-3 py-1.5 text-xs font-medium transition-colors tracking-wide flex items-center space-x-1.5 ${
                     isActive
                       ? 'text-[#c6f135] font-bold'
                       : 'text-[#a0a0a0] hover:text-white'
                   }`}
                 >
                   <span>{link.label}</span>
+                  {Boolean(link.badge && link.badge > 0) && (
+                    <span className="w-4 h-4 rounded-full bg-[#c6f135] text-[#0a0a0a] font-bold text-[9px] flex items-center justify-center font-mono animate-pulse">
+                      {link.badge}
+                    </span>
+                  )}
                   {isActive && (
                     <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-[#c6f135] shadow-[0_0_8px_#c6f135] rounded-full" />
                   )}
@@ -201,15 +213,15 @@ export const Navbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => navigate('/settings')}
-                  className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono border transition-all ${
+                  className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono border transition-all cursor-pointer ${
                     hasKey
                       ? 'bg-[#c6f135]/10 border-[#c6f135]/30 text-[#c6f135]'
                       : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
                   }`}
-                  title={hasKey ? 'AI Provider active' : 'No API key configured'}
+                  title={hasKey ? `${(llmConfig?.provider || 'AI').toUpperCase()} configured and active` : 'No API key configured. Click to configure in Settings.'}
                 >
                   <KeyRound size={11} />
-                  <span>{hasKey ? `${llmConfig?.provider || 'AI'} Active` : 'Add API Key'}</span>
+                  <span>{hasKey ? `${(llmConfig?.provider || 'AI').toUpperCase()} Active` : 'No Key Configured'}</span>
                 </button>
 
                 {/* User Pill */}

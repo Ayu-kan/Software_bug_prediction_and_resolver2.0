@@ -1,251 +1,250 @@
-# Enterprise Bug Risk Intelligence Platform v2.0
+# Enterprise Bug Risk Intelligence & Automated Resolution Platform (v2.0)
 
-An enterprise-grade, multi-language software bug risk prediction platform powered by static code analysis, calibrated ML predictions, interactive code preview with red bug highlighting, side-by-side AI code diff, and LLM-powered issue resolution.
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=flat&logo=vite&logoColor=white)](https://vitejs.dev)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
----
-
-## 🌟 Features
-
-### 1. User Authentication & Access Control
-- Full user sign-up, sign-in, and persistent session management.
-- Protected application routes — analysis tools accessible only to authenticated users.
-- Complete user data isolation: each user sees only their own analyses and history.
-
-### 2. Premium Dark Navbar UI
-- Responsive top navigation bar with glassmorphism styling replacing the old sidebar.
-- Dynamic icons per navigation tab with active tab highlighting and hover transitions.
-- Responsive mobile hamburger menu.
-- Live **API Key Status Badge** in the navbar showing whether an LLM key is active.
-
-### 3. LLM API Configuration & Persistent Session Key
-- Settings page to configure **OpenAI** or **Google Gemini** provider and API key.
-- Key is persisted for the **active user session** across all pages without re-entry.
-- API key is securely wiped on logout or explicit clear.
-
-### 4. Repository Analysis & Calibrated ML Bug Prediction
-- Multi-language static code analysis (`.py`, `.js`, `.ts`, `.java`).
-- Graph-based dependency risk modeling and architectural role detection.
-- ML classification using **XGBoost**, **Random Forest**, and **Logistic Regression**.
-- **Per-repo score calibration**: risk scores are normalized relative to the repository being analyzed (5th–95th percentile rescaling), preventing systematic over-prediction when git history features are absent.
-
-### 5. Hybrid Mode Filtering
-- Analysis mode that filters results to show only files with ML risk probability **> 65%** (calibrated).
-- Reduces noise and focuses the user on genuinely risky files.
-
-### 6. Ranked Risk Inventory
-- Full sortable table with Rank, File, Risk Level, ML Probability, and Action columns.
-- Inline expandable row showing **Risk Triggers**, **Code Metrics** (LOC, Complexity, Churn), and **Suspicious Lines** list.
-- Clicking a suspicious line in the table directly opens the **Code Preview** scrolled to that exact line.
-
-### 7. Interactive Code Preview with Red Bug Highlighting
-- Full source file rendered in Monaco Editor (VS Code engine) with syntax highlighting.
-- Suspicious/buggy lines highlighted in **red** with glyph margin markers.
-- Auto-scroll to target line on click.
-- Interactive **Bug Details Side Drawer** showing severity, line range, explanation, and impact.
-- One-click **"Generate AI Fix for this Line"** shortcut.
-- Gracefully loads full file content from backend if source is missing.
-
-### 8. Suspicious Line Detection (Refined)
-- Pattern-based + AST analysis for Python files.
-- Detects: bare `except:`, `eval()`/`exec()`, TODO/FIXME markers, `while True:`, empty catch blocks, global state mutation.
-- Tightened thresholds to reduce false positives: function length > 80 lines (was 40), args > 7 (was 5).
-
-### 9. AI Issue Resolution with Side-by-Side Diff
-- AI resolution drawer powered by configured OpenAI or Gemini API.
-- Structured solution tabs:
-  - **Side-by-Side Diff** — Monaco `DiffEditor` comparing original vs. AI-refactored code.
-  - **Fixed Code** — full refactored file viewer with copy button.
-  - **Fix Steps** — step-by-step refactoring recommendations.
-  - **Summary & Impacts** — problem analysis and side-effect warnings.
-- Fallback rule-based engine when no API key is configured.
-
-### 10. Analysis History & Dashboard
-- Persistent per-user analysis history stored in SQLite.
-- Dashboard shows metrics: total analyses, latest repo, total files, high-risk count.
-- Risk distribution donut chart and recent analyses history table.
+An enterprise-grade machine learning and multi-provider generative AI platform designed to predict source code vulnerability risk, pinpoint cyclomatic anomalies and suspicious lines via AST parsing, and synthesize production-ready code fixes across multiple LLM backends (OpenAI GPT-4o, Google Gemini 1.5/2.0 Flash, and Groq Llama 3).
 
 ---
 
-## 📁 Project Structure
+## 🌟 Key Features
 
-```text
-Software_bug_prediction_and_resolver2.0/
-│
-├── frontend/                        # React + Vite TypeScript SPA
-│   └── src/
-│       ├── components/
-│       │   ├── ai/AiResolution.tsx  # AI fix drawer with Monaco DiffView
-│       │   ├── code/
-│       │   │   ├── CodePreview.tsx  # Monaco editor with red line highlighting
-│       │   │   └── CodeDiffView.tsx # Side-by-side Monaco DiffEditor
-│       │   ├── common/
-│       │   │   ├── Navbar.tsx       # Premium dark top navigation bar
-│       │   │   └── ErrorBoundary.tsx
-│       │   └── risk/RiskTable.tsx   # Ranked risk inventory table
-│       ├── pages/
-│       │   ├── Dashboard.tsx        # Metrics + history overview
-│       │   ├── Analysis.tsx         # Repository analysis runner
-│       │   ├── Settings.tsx         # LLM API key configuration
-│       │   └── Login.tsx
-│       ├── store/
-│       │   ├── authStore.ts         # Zustand auth + persistent llmConfig
-│       │   └── analysisStore.ts
-│       └── services/api.ts          # Axios API client
-│
-├── backend/                         # FastAPI Python backend
-│   ├── api/app.py                   # All handlers + per-repo calibration
-│   ├── auth/                        # JWT security, password hashing
-│   ├── database/db.py               # SQLite ORM & queries
-│   └── services/
-│       ├── ranking_service.py       # File ranking + risk level assignment
-│       ├── suspicious_line_service.py  # AST + pattern bug detection
-│       └── llm_service.py           # OpenAI / Gemini API + fallback engine
-│
-├── src/                             # Feature extraction engine
-│   ├── extract_features.py          # Static + git metrics extractor
-│   ├── analyzers/                   # Language-specific analyzers
-│   ├── graph/                       # Dependency graph builder
-│   └── repo/                        # Repo validator + temp clone util
-│
-├── models/                          # Trained ML model files
-│   ├── xgboost.joblib
-│   ├── random_forest.joblib
-│   ├── logistic_regression.joblib
-│   ├── scaler.joblib
-│   └── feature_columns.json
-│
-├── data/                            # SQLite database storage
-├── tests/                           # Unit test suites
-├── requirements.txt                 # Python backend dependencies
-├── start_backend.ps1                # PowerShell backend launcher
-├── start_frontend.ps1               # PowerShell frontend launcher
-└── README.md
+- **Predictive Bug Risk Engine**: Pre-trained Random Forest / Ensemble machine learning models compute defect probabilities and cyclomatic complexity metrics across entire repository codebases.
+- **AST Suspicious Line Flagging**: Static Abstract Syntax Tree analyzers dissect and highlight risky code blocks, unhandled exceptions, and concurrency deadlocks with Monaco editor syntax previews.
+- **Multi-Provider AI Remediation**: User session-isolated LLM engine generating automated code fixes and unified diffs via:
+  - **OpenAI** (`gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`)
+  - **Google Gemini** (`gemini-1.5-flash`, `gemini-2.0-flash`, `gemini-1.5-pro`)
+  - **Groq Ultra-Fast Inference** (`llama-3.1-8b-instant`, `llama-3.3-70b-versatile`, `mixtral-8x7b-32768`)
+- **Strict User & Session Data Isolation**: Zero state bleeding between users. Encrypted per-session API keys and clean history sandboxing.
+- **Collaborative Workspaces & RBAC**:
+  - **Admin**: Create workspaces, invite teammates, revoke invitations, and manage roles.
+  - **Editor**: Execute repository scans, run AI fix generation, and collaborate on shared results.
+  - **Viewer**: Read-only access to audit reports, charts, and metrics.
+  - **Approval Workflow**: Invited members receive `[ Accept ]` / `[ Reject ]` requests with real-time audit logging.
+- **Modern Observability UI**: Dark-mode glassmorphic interface built with Tailwind CSS, Lucide icons, Framer Motion animations, and Recharts risk distribution analytics.
+
+---
+
+## 🏗 Architecture Overview
+
+```mermaid
+graph TD
+    Client["React + Vite Frontend (SPA)"]
+    API["FastAPI Backend (v2.0)"]
+    DB[(SQLite Persistent Storage)]
+    ML["Scikit-Learn ML Model & AST Analyzer"]
+    LLM["Multi-Provider LLM Engine"]
+
+    Client -->|REST & WebSockets| API
+    API -->|Auth, Workspaces, Analyses, Invites| DB
+    API -->|Code Risk & Metric Extraction| ML
+    API -->|Encrypted Session Key Fix Dispatch| LLM
+
+    LLM --> OpenAI["OpenAI API"]
+    LLM --> Gemini["Google Gemini API"]
+    LLM --> Groq["Groq Cloud API"]
 ```
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠 Tech Stack
 
-### Backend
-| Technology | Purpose |
+| Layer | Technology |
 |---|---|
-| Python 3.10+ | Runtime |
-| FastAPI | REST API framework |
-| Uvicorn | ASGI server |
-| Pydantic v2 | Request/response validation |
-| SQLite + custom ORM | Persistent user data storage |
-| PBKDF2 + JWT | Auth security |
-| XGBoost, Random Forest, Logistic Regression | ML bug prediction |
-| Scikit-learn, NumPy, Pandas | Feature processing & ML |
-| Lizard, Radon | Cyclomatic complexity metrics |
-| PyDriller | Git commit history mining |
-| NetworkX | Dependency graph analysis |
-| python-dotenv | Environment variable loading |
-
-### Frontend
-| Technology | Purpose |
-|---|---|
-| React 19 + TypeScript | UI framework |
-| Vite | Build tool & dev server |
-| TailwindCSS v4 | Utility-first styling |
-| Zustand | Global state management (auth + LLM session) |
-| Monaco Editor (`@monaco-editor/react`) | Code viewer + Diff editor |
-| Framer Motion | UI animations & transitions |
-| Recharts | Dashboard charts |
-| Axios | HTTP API client |
-| Lucide React | Icons |
-| React Router DOM | Client-side routing |
+| **Frontend** | React 19, TypeScript, Vite 6, Tailwind CSS v4, Lucide React, Framer Motion, Recharts |
+| **Backend** | Python 3.11, FastAPI, Uvicorn, Pydantic, WebSockets |
+| **Machine Learning** | Scikit-Learn (Random Forest Classifier), Pandas, Joblib, AST parser, Radon metrics |
+| **Generative AI** | Google Generative AI (`google-genai` / REST), OpenAI Python SDK, Groq SDK |
+| **Database** | SQLite 3 with automatic schema migrations and foreign key constraints |
+| **Containerization** | Multi-stage Dockerfile (Node 20 Vite builder + Python 3.11 runner), Docker Compose |
 
 ---
 
-## 💻 Installation & Setup
+## 📋 Prerequisites
 
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
+- **Python 3.10+** (Python 3.11 recommended)
+- **Node.js 18+** and **npm** / **yarn** / **pnpm**
+- **Git**
+- *(Optional)* **Docker** and **Docker Compose**
+
+---
+
+## 🚀 Local Development Setup
 
 ### 1. Clone the Repository
 ```bash
-git clone <repo-url>
+git clone https://github.com/Ayu-kan/Software_bug_prediction_and_resolver2.0.git
 cd Software_bug_prediction_and_resolver2.0
 ```
 
-### 2. Environment Configuration
-Create a `.env` file in the root directory:
-```env
-JWT_SECRET=your-super-secret-key-here
-OPENAI_API_KEY=          # Optional: can be configured per-user in Settings
-GEMINI_API_KEY=          # Optional: can be configured per-user in Settings
-```
-
-### 3. Install Python Dependencies
+### 2. Backend Setup
 ```bash
+# Create and activate virtual environment
+python -m venv venv
+
+# Windows:
+.\venv\Scripts\Activate.ps1
+# Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Start FastAPI server
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 4. Install Frontend Dependencies
+### 3. Frontend Setup
 ```bash
+# In a separate terminal:
 cd frontend
 npm install
-cd ..
-```
-
----
-
-## 🚀 Running the Application
-
-### Start the Backend (FastAPI)
-```bash
-uvicorn backend.main:app --reload --port 8000
-```
-Or use the helper script:
-```bash
-.\start_backend.ps1
-```
-API available at: `http://localhost:8000`  
-Interactive docs: `http://localhost:8000/docs`
-
-### Start the Frontend (React/Vite)
-```bash
-cd frontend
 npm run dev
 ```
-Or use the helper script:
-```bash
-.\start_frontend.ps1
-```
-App available at: `http://localhost:5173`
+Open **http://localhost:5173** in your browser.
 
 ---
 
-## 🔌 API Reference
+## 🐳 Docker Deployment
+
+### Option A: Standalone Unified Production Container
+The unified multi-stage `Dockerfile` builds the Vite frontend and serves both the API and static SPA directly from FastAPI on port `8000`:
+
+```bash
+# Build the Docker image
+docker build -t bugpredict:latest .
+
+# Run container
+docker run -d -p 8000:8000 --name bugpredict-app bugpredict:latest
+```
+Access the application at **http://localhost:8000**.
+
+### Option B: Multi-Container with Docker Compose
+Run the modular frontend + backend architecture with Nginx reverse proxy:
+
+```bash
+docker-compose up -d --build
+```
+- Frontend / Nginx: **http://localhost:80**
+- Backend API: **http://localhost:8000**
+
+To shut down:
+```bash
+docker-compose down
+```
+
+---
+
+## ☁️ Cloud Deployment Guides
+
+### 1. Render (Web Service)
+1. Fork or push this repository to GitHub.
+2. Log in to [Render Dashboard](https://dashboard.render.com/) and click **New + -> Web Service**.
+3. Select **Docker** environment.
+4. Set Environment Variables:
+   - `PORT=8000`
+   - `ENVIRONMENT=production`
+5. Click **Create Web Service**.
+
+### 2. Railway
+1. Go to [Railway](https://railway.app/) and create a new project from your GitHub repo.
+2. Railway will automatically detect the root `Dockerfile` and deploy the service.
+3. Add a persistent volume mounted at `/app` if you wish to persist the SQLite database across container redeploys.
+
+### 3. Google Cloud Run
+```bash
+# Authenticate and configure project
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+
+# Build and submit image to Google Artifact Registry
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/bugpredict:latest
+
+# Deploy to Cloud Run
+gcloud run deploy bugpredict \
+  --image gcr.io/YOUR_PROJECT_ID/bugpredict:latest \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 8000
+```
+
+### 4. AWS EC2 / DigitalOcean Droplet
+1. Launch an Ubuntu 22.04 LTS instance.
+2. Install Docker & Docker Compose:
+   ```bash
+   sudo apt update && sudo apt install -y docker.io docker-compose
+   sudo systemctl enable --now docker
+   ```
+3. Clone repository and run:
+   ```bash
+   git clone https://github.com/Ayu-kan/Software_bug_prediction_and_resolver2.0.git
+   cd Software_bug_prediction_and_resolver2.0
+   docker-compose up -d --build
+   ```
+
+---
+
+## ⚙️ Environment Variables Reference
+
+Copy `.env.example` to `.env` to configure your environment:
+
+```env
+# Application Environment
+ENVIRONMENT=production
+
+# Network & Server Port
+PORT=8000
+HOST=0.0.0.0
+
+# Database Configuration
+DATABASE_PATH=sqlite:///./database.db
+
+# JWT & Authentication Secret Key
+SECRET_KEY=generate-a-secure-random-key-for-production-use
+
+# Optional Global AI Provider Fallback Keys
+# OPENAI_API_KEY=sk-...
+# GEMINI_API_KEY=AIzaSy...
+# GROQ_API_KEY=gsk_...
+```
+
+---
+
+## 📡 API Endpoints Overview
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+|---|---|---|
 | `POST` | `/auth/register` | Register a new user account |
-| `POST` | `/auth/login` | Authenticate and receive JWT token |
-| `POST` | `/auth/config` | Save LLM provider and API key for user |
-| `POST` | `/analysis/run` | Run full ML analysis on a repository path or GitHub URL |
-| `POST` | `/analysis/resolve` | Generate AI fix using user's saved LLM credentials |
-| `GET`  | `/analysis/history/{user_id}` | Get analysis history list for a user |
-| `GET`  | `/analysis/details/{analysis_id}` | Retrieve full analysis result data |
-| `DELETE` | `/analysis/delete/{analysis_id}` | Delete a saved analysis record |
-| `GET`  | `/analysis/file-content` | Fetch raw source file content by path |
-| `GET`  | `/health` | Health check |
+| `POST` | `/auth/login` | Authenticate user & return JWT token |
+| `POST` | `/auth/config` | Update user encrypted AI provider keys |
+| `GET` | `/auth/config/{user_id}` | Retrieve active provider configuration |
+| `POST` | `/workspaces/create` | Create a new collaborative team workspace |
+| `GET` | `/workspaces/user/{user_id}` | List user workspaces |
+| `POST` | `/workspaces/invite` | Send workspace invitation to registered user |
+| `GET` | `/workspaces/invitations/{user_id}` | Get user's incoming pending invitations |
+| `POST` | `/workspaces/invitations/{id}/respond` | Accept or reject workspace invitation |
+| `DELETE` | `/workspaces/invitations/{id}` | Cancel pending outgoing invitation (Admin) |
+| `POST` | `/analysis/run` | Execute ML bug risk & AST file ranking |
+| `POST` | `/analysis/resolve` | Generate AI patch solution via configured LLM |
+| `POST` | `/analysis/test-connection` | Verify API key connectivity against LLM provider |
+| `GET` | `/analysis/history/{user_id}` | Retrieve historical scans for user or workspace |
 
 ---
 
-## 🧪 Running Tests
+## 🛡️ Security & Privacy Architecture
 
-```bash
-python -m unittest tests/test_upgraded_features.py
-python -m unittest tests/test_pipeline.py
-```
+- **Zero Global Key Bleeding**: API keys are isolated to authenticated user sessions and never shared with team members.
+- **Client-Side Masking**: All keys retrieved over REST interfaces are masked (`••••••••`) by default.
+- **RBAC Enforcement**: Admin privileges are strictly required to mutate workspace permissions, invite team members, or revoke access.
+- **AST Sandboxing**: Source code parsing utilizes static AST analysis without executing untrusted external scripts.
 
 ---
 
-## 📝 Notes
+## 📄 License
 
-- **Risk Calibration**: ML risk scores are calibrated per-repo using percentile normalization, ensuring scores reflect relative risk within the analyzed codebase rather than absolute model outputs. This prevents most files from showing "High" when git history data is unavailable.
-- **LLM API Keys**: Keys can be stored server-side per user via `/auth/config`, or configured in `.env` for global fallback. The frontend persists the active key in Zustand session state.
-- **Supported Languages**: Python, JavaScript, TypeScript, Java (feature extraction + syntax highlighting).
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
