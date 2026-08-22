@@ -58,6 +58,7 @@ export interface Workspace {
   description?: string;
   owner_id: number;
   role?: WorkspaceRole;
+  invite_code?: string;
   created_at: string;
   member_count?: number;
   analysis_count?: number;

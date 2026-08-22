@@ -4,7 +4,7 @@ import { Loader2, Mail, CheckCircle2, ArrowLeft, Send } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { authAPI } from '../services/api';
 
-const Login = () => {
+export const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const [isLoginMode, setIsLoginMode] = useState(true);
@@ -36,13 +36,12 @@ const Login = () => {
 
     try {
       if (isForgotPasswordMode) {
-        // Forgot password flow (Frontend Integration Point)
         if (!forgotEmail.trim()) {
           setError('Please enter your registered email address.');
           setLoading(false);
           return;
         }
-        await new Promise((r) => setTimeout(r, 600)); // simulated dispatch
+        await new Promise((r) => setTimeout(r, 600));
         setForgotSubmitted(true);
         setSuccessMsg(`Password reset instructions have been dispatched to ${forgotEmail}. Please check your inbox.`);
         setLoading(false);
@@ -56,7 +55,7 @@ const Login = () => {
             provider: res.llm_provider || 'openai',
             keys: res.keys || { openai: res.llm_api_key || '', gemini: '', groq: '' }
           });
-          navigate('/');
+          navigate('/dashboard');
         } else {
           setError(res.error || res.message || 'Invalid username or password.');
         }
@@ -92,23 +91,25 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
-      {/* Subtle Background Glow Decor */}
-      <div className="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-destructive/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4 relative overflow-hidden text-white">
+      {/* Background Neon Lime Glow Decor */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#c6f135]/5 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#c6f135]/5 rounded-full blur-[140px] pointer-events-none" />
 
-      <div className="w-full max-w-md glass p-8 rounded-2xl shadow-2xl z-10 border border-border/70 backdrop-blur-xl">
+      <div className="w-full max-w-md bg-[#121212] border border-[#2a2a2a] p-8 rounded-2xl shadow-2xl z-10 glass-card">
         
-        {/* Header with Blue Bug Logo and Product Title */}
+        {/* Header with BP_ Logo and Product Title */}
         <div className="flex flex-col items-center mb-6 text-center">
-          <img src="/favicon.svg" alt="BugRiskIntel Logo" className="w-14 h-14 mb-3 object-contain drop-shadow-md" />
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center justify-center space-x-1.5">
-            <span>BugRisk<span className="text-primary">Intel</span></span>
+          <div className="w-12 h-12 rounded-xl bg-[#c6f135] text-[#0a0a0a] flex items-center justify-center font-extrabold text-lg shadow-[0_0_20px_rgba(198,241,53,0.35)] mb-3">
+            BP_
+          </div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center justify-center space-x-1.5 uppercase">
+            <span>BugPredict<span className="text-[#c6f135]"> AI</span></span>
           </h1>
-          <span className="text-[11px] font-mono text-muted-foreground mt-0.5 tracking-wider uppercase font-semibold">
-            Enterprise v2.0
+          <span className="text-[10px] font-mono text-[#a0a0a0] mt-0.5 tracking-wider uppercase font-semibold">
+            Enterprise Edition v2.0
           </span>
-          <p className="text-xs text-muted-foreground mt-2 max-w-xs">
+          <p className="text-xs text-[#a0a0a0] mt-2 max-w-xs leading-relaxed">
             {isForgotPasswordMode
               ? 'Reset your account password via secure email link.'
               : isLoginMode
@@ -119,16 +120,16 @@ const Login = () => {
 
         {/* Email Verification Banner */}
         {verificationPendingEmail && (
-          <div className="p-3.5 rounded-xl mb-4 bg-primary/10 border border-primary/25 text-xs text-foreground space-y-2">
-            <div className="flex items-center space-x-2 text-primary font-bold">
+          <div className="p-3.5 rounded-xl mb-4 bg-[#c6f135]/10 border border-[#c6f135]/30 text-xs space-y-2">
+            <div className="flex items-center space-x-2 text-[#c6f135] font-bold">
               <Mail size={15} />
               <span>Email Verification Pending</span>
             </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              We sent a verification link to <strong className="text-foreground font-mono">{verificationPendingEmail}</strong>.
+            <p className="text-[11px] text-[#a0a0a0] leading-relaxed">
+              We sent a verification link to <strong className="text-white font-mono">{verificationPendingEmail}</strong>.
             </p>
             {verificationSentMsg && (
-              <div className="flex items-center space-x-1.5 text-green-400 text-[11px] font-semibold">
+              <div className="flex items-center space-x-1.5 text-emerald-400 text-[11px] font-semibold">
                 <CheckCircle2 size={13} />
                 <span>{verificationSentMsg}</span>
               </div>
@@ -137,7 +138,7 @@ const Login = () => {
               type="button"
               onClick={handleResendVerification}
               disabled={resendingVerification}
-              className="text-[11px] text-primary hover:underline font-semibold flex items-center space-x-1 pt-1"
+              className="text-[11px] text-[#c6f135] hover:underline font-semibold flex items-center space-x-1 pt-1 cursor-pointer"
             >
               {resendingVerification ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
               <span>{resendingVerification ? 'Resending Link...' : 'Resend Verification Email'}</span>
@@ -147,14 +148,14 @@ const Login = () => {
 
         {/* Error Alert */}
         {error && (
-          <div className="p-3 rounded-xl mb-4 text-xs bg-destructive/15 text-destructive border border-destructive/30 leading-relaxed">
+          <div className="p-3 rounded-xl mb-4 text-xs bg-red-500/15 text-red-400 border border-red-500/30 leading-relaxed font-mono">
             {error}
           </div>
         )}
 
         {/* Success Alert */}
         {successMsg && !verificationPendingEmail && (
-          <div className="p-3 rounded-xl mb-4 text-xs bg-green-500/15 text-green-400 border border-green-500/30 leading-relaxed flex items-start space-x-2">
+          <div className="p-3 rounded-xl mb-4 text-xs bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 leading-relaxed flex items-start space-x-2 font-mono">
             <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
             <span>{successMsg}</span>
           </div>
@@ -166,23 +167,21 @@ const Login = () => {
             {!forgotSubmitted ? (
               <>
                 <div>
-                  <label className="block text-xs font-semibold text-foreground mb-1.5">Registered Email Address</label>
-                  <div className="relative">
-                    <input
-                      type="email"
-                      required
-                      placeholder="name@company.com"
-                      className="w-full bg-secondary/50 border border-border rounded-xl px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder:text-muted-foreground"
-                      value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
-                    />
-                  </div>
+                  <label className="block text-xs font-mono text-[#a0a0a0] uppercase mb-1.5">Registered Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="name@company.com"
+                    className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#c6f135] transition-colors"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                  />
                 </div>
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-4 py-2.5 text-xs transition-all shadow-md flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
+                  className="w-full bg-[#c6f135] hover:bg-[#b8e32c] text-[#0a0a0a] font-bold rounded-xl py-2.5 text-xs transition-all shadow-[0_0_15px_rgba(198,241,53,0.25)] flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? <Loader2 className="animate-spin" size={16} /> : <Send size={14} />}
                   <span>{loading ? 'Sending Instructions...' : 'Send Password Reset Link'}</span>
@@ -190,13 +189,13 @@ const Login = () => {
               </>
             ) : (
               <div className="py-2 text-center space-y-3">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[#a0a0a0]">
                   Didn't receive the email? Check your spam folder or try again.
                 </p>
                 <button
                   type="button"
                   onClick={() => setForgotSubmitted(false)}
-                  className="text-xs text-primary font-semibold hover:underline"
+                  className="text-xs text-[#c6f135] font-semibold hover:underline"
                 >
                   Enter a different email
                 </button>
@@ -211,7 +210,7 @@ const Login = () => {
                 setSuccessMsg('');
                 setForgotSubmitted(false);
               }}
-              className="w-full mt-2 py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground flex items-center justify-center space-x-1.5 transition-colors font-medium"
+              className="w-full mt-2 py-2 rounded-xl text-xs text-[#a0a0a0] hover:text-white flex items-center justify-center space-x-1.5 transition-colors font-medium"
             >
               <ArrowLeft size={13} />
               <span>Back to Sign In</span>
@@ -221,12 +220,12 @@ const Login = () => {
           /* Sign In / Sign Up Mode */
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Username</label>
+              <label className="block text-xs font-mono text-[#a0a0a0] uppercase mb-1.5">Username</label>
               <input
                 type="text"
                 required
                 placeholder="Enter username"
-                className="w-full bg-secondary/50 border border-border rounded-xl px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder:text-muted-foreground"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#c6f135] transition-colors"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               />
@@ -234,12 +233,12 @@ const Login = () => {
 
             {!isLoginMode && (
               <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5">Email Address</label>
+                <label className="block text-xs font-mono text-[#a0a0a0] uppercase mb-1.5">Email Address</label>
                 <input
                   type="email"
                   required
                   placeholder="name@company.com"
-                  className="w-full bg-secondary/50 border border-border rounded-xl px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder:text-muted-foreground"
+                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#c6f135] transition-colors"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
@@ -248,7 +247,7 @@ const Login = () => {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-foreground">Password</label>
+                <label className="text-xs font-mono text-[#a0a0a0] uppercase">Password</label>
                 {isLoginMode && (
                   <button
                     type="button"
@@ -258,7 +257,7 @@ const Login = () => {
                       setSuccessMsg('');
                       setForgotEmail('');
                     }}
-                    className="text-[11px] text-primary hover:underline font-medium"
+                    className="text-[11px] text-[#c6f135] hover:underline font-mono"
                   >
                     Forgot password?
                   </button>
@@ -268,7 +267,7 @@ const Login = () => {
                 type="password"
                 required
                 placeholder="••••••••"
-                className="w-full bg-secondary/50 border border-border rounded-xl px-3.5 py-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder:text-muted-foreground font-mono"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-[#c6f135] transition-colors"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               />
@@ -277,14 +276,14 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-4 py-2.5 text-xs transition-all shadow-md flex items-center justify-center space-x-2 mt-4 disabled:opacity-50 cursor-pointer"
+              className="w-full bg-[#c6f135] hover:bg-[#b8e32c] text-[#0a0a0a] font-bold rounded-xl py-2.5 text-xs transition-all shadow-[0_0_15px_rgba(198,241,53,0.25)] flex items-center justify-center space-x-2 mt-4 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <Loader2 className="animate-spin" size={16} />
               ) : isLoginMode ? (
-                'Sign In to BugRiskIntel'
+                'Sign In to BugPredict AI'
               ) : (
-                'Create Account'
+                'Create BugPredict Account'
               )}
             </button>
           </form>
@@ -292,13 +291,13 @@ const Login = () => {
 
         {/* Toggle Login vs Sign Up */}
         {!isForgotPasswordMode && (
-          <div className="mt-5 text-center text-xs border-t border-border/50 pt-4">
-            <span className="text-muted-foreground">
+          <div className="mt-5 text-center text-xs border-t border-[#2a2a2a] pt-4">
+            <span className="text-[#a0a0a0]">
               {isLoginMode ? "Don't have an account yet? " : 'Already registered? '}
             </span>
             <button
               type="button"
-              className="text-primary font-semibold hover:underline"
+              className="text-[#c6f135] font-bold hover:underline ml-1"
               onClick={() => {
                 setIsLoginMode(!isLoginMode);
                 setError('');
