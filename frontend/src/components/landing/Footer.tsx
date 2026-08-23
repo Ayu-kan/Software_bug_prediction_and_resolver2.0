@@ -13,7 +13,7 @@ export const Footer: React.FC = () => {
           
           {/* Logo & Tagline */}
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-8 h-8 rounded-lg bg-[#c6f135] flex items-center justify-center p-1 shadow-[0_0_12px_rgba(198,241,53,0.3)] shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-[#c6f135] shadow-[0_0_12px_rgba(198,241,53,0.3)] flex items-center justify-center p-1 overflow-hidden shrink-0">
               <img
                 src={logoImg}
                 alt="BugRisk insight Logo"

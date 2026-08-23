@@ -101,7 +101,7 @@ export const Login: React.FC = () => {
         
         {/* Header with Brand Logo and Product Title */}
         <div className="flex flex-col items-center mb-6 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-[#c6f135] flex items-center justify-center p-2 shadow-[0_0_20px_rgba(198,241,53,0.35)] mb-3">
+          <div className="w-14 h-14 rounded-2xl bg-[#c6f135] shadow-[0_0_20px_rgba(198,241,53,0.35)] flex items-center justify-center p-2 overflow-hidden mb-3">
             <img
               src={logoImg}
               alt="BugRisk insight Logo"
