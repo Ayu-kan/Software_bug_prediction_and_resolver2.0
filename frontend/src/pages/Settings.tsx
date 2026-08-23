@@ -5,7 +5,7 @@ import { authAPI, analysisAPI, modelAPI } from '../services/api';
 import {
   KeyRound, CheckCircle2, Loader2, Save, Trash2, ShieldCheck,
   AlertCircle, Zap, Wifi, WifiOff, ChevronDown, Eye, EyeOff,
-  BrainCircuit, TrendingUp, RefreshCw, History, ChevronRight
+  BrainCircuit, RefreshCw, History, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
