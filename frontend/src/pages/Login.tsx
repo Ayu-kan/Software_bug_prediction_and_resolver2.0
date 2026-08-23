@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, Mail, CheckCircle2, ArrowLeft, Send } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { authAPI } from '../services/api';
+import logoImg from '../assets/logo.png';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -98,13 +99,17 @@ export const Login: React.FC = () => {
 
       <div className="w-full max-w-md bg-[#121212] border border-[#2a2a2a] p-8 rounded-2xl shadow-2xl z-10 glass-card">
         
-        {/* Header with BP_ Logo and Product Title */}
+        {/* Header with Brand Logo and Product Title */}
         <div className="flex flex-col items-center mb-6 text-center">
-          <div className="w-12 h-12 rounded-xl bg-[#c6f135] text-[#0a0a0a] flex items-center justify-center font-extrabold text-lg shadow-[0_0_20px_rgba(198,241,53,0.35)] mb-3">
-            BP_
+          <div className="w-14 h-14 rounded-2xl bg-[#c6f135] flex items-center justify-center p-2 shadow-[0_0_20px_rgba(198,241,53,0.35)] mb-3">
+            <img
+              src={logoImg}
+              alt="BugRisk insight Logo"
+              className="w-full h-full object-contain"
+            />
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center justify-center space-x-1.5 uppercase">
-            <span>BugPredict<span className="text-[#c6f135]"> AI</span></span>
+            <span>BugRisk<span className="text-[#c6f135]"> insight</span></span>
           </h1>
           <span className="text-[10px] font-mono text-[#a0a0a0] mt-0.5 tracking-wider uppercase font-semibold">
             Enterprise Edition v2.0

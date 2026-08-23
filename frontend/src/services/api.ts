@@ -58,4 +58,13 @@ export const analysisAPI = {
     api.get(`/analysis/file-content`, { params: { file_path: filePath, repo_path: repoPath } }).then(r => r.data),
   getSolutions: (params: { analysis_id?: number; file_path?: string; workspace_id?: number; user_id?: number }) =>
     api.get('/analysis/solutions', { params }).then(r => r.data),
+  submitFeedback: (data: { user_id: number; file_path: string; predicted_risk: number; feedback: string; analysis_id?: number }) =>
+    api.post('/analysis/feedback', data).then(r => r.data),
+};
+
+export const modelAPI = {
+  getStatus: () => api.get('/model/status').then(r => r.data),
+  getHistory: () => api.get('/model/history').then(r => r.data),
+  retrain: (triggeredBy = 'admin') =>
+    api.post(`/model/retrain`, null, { params: { triggered_by: triggeredBy } }).then(r => r.data),
 };

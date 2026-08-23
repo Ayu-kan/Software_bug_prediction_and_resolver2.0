@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import logoImg from '../../assets/logo.png';
 
 export const Footer: React.FC = () => {
   const navigate = useNavigate();
@@ -12,12 +13,16 @@ export const Footer: React.FC = () => {
           
           {/* Logo & Tagline */}
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigate('/')}>
-            <div className="w-8 h-8 rounded-lg bg-[#c6f135] text-[#0a0a0a] flex items-center justify-center font-bold text-sm shadow-[0_0_12px_rgba(198,241,53,0.3)]">
-              BP_
+            <div className="w-8 h-8 rounded-lg bg-[#c6f135] flex items-center justify-center p-1 shadow-[0_0_12px_rgba(198,241,53,0.3)] shrink-0">
+              <img
+                src={logoImg}
+                alt="BugRisk insight Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <span className="text-white font-bold text-sm tracking-wider">
-                BugPredict<span className="text-[#c6f135]"> AI</span>
+                BugRisk<span className="text-[#c6f135]"> insight</span>
               </span>
               <p className="text-[10px] text-[#777]">Next-Gen ML Software Risk Intelligence</p>
             </div>
@@ -56,7 +61,7 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Credits */}
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#666] gap-3">
-          <p>© {new Date().getFullYear()} BugPredict AI Inc. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} BugRisk insight Inc. All rights reserved.</p>
           <div className="flex items-center space-x-2">
             <span>Built for High-Velocity Engineering</span>
             <span>·</span>

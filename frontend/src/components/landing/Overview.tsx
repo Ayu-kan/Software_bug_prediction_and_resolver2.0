@@ -92,7 +92,7 @@ export const Overview: React.FC = () => {
             </div>
 
             <p className="text-sm sm:text-base text-[#a0a0a0] leading-relaxed">
-              BugPredict AI unifies static AST syntax inspection with pre-trained machine learning defect classifiers. By analyzing churn, structural complexity, and coupling graphs, engineering teams gain instant file-level visibility into vulnerabilities before committing code.
+              BugRisk insight unifies static AST syntax inspection with pre-trained machine learning defect classifiers. By analyzing churn, structural complexity, and coupling graphs, engineering teams gain instant file-level visibility into vulnerabilities before committing code.
             </p>
 
             {/* 3 Metric Stat Cards */}

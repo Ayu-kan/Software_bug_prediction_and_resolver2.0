@@ -7,6 +7,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { workspaceAPI } from '../../services/api';
 import type { Workspace } from '../../types';
+import logoImg from '../../assets/logo.png';
 
 export const Navbar: React.FC = () => {
   const {
@@ -63,18 +64,22 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-3 sm:gap-6">
           
-          {/* Left: Neon Lime BP_ Logo & Product Title */}
+          {/* Left: Brand Logo & Product Title */}
           <div className="flex items-center space-x-3 shrink-0">
             <div
               className="flex items-center space-x-2.5 cursor-pointer select-none"
               onClick={() => navigate('/')}
             >
-              <div className="w-8 h-8 rounded-lg bg-[#c6f135] text-[#0a0a0a] flex items-center justify-center font-extrabold text-sm shadow-[0_0_15px_rgba(198,241,53,0.35)]">
-                BP_
+              <div className="w-8 h-8 rounded-lg bg-[#c6f135] flex items-center justify-center p-1 shadow-[0_0_15px_rgba(198,241,53,0.35)] shrink-0">
+                <img
+                  src={logoImg}
+                  alt="BugRisk insight Logo"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div className="flex flex-col">
                 <span className="text-base font-extrabold tracking-tight text-white leading-none">
-                  BugPredict<span className="text-[#c6f135]"> AI</span>
+                  BugRisk<span className="text-[#c6f135]"> insight</span>
                 </span>
                 <span className="text-[9px] font-mono text-[#a0a0a0] mt-0.5 tracking-wider uppercase">
                   Enterprise v2.0

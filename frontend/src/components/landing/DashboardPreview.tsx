@@ -70,7 +70,7 @@ export const DashboardPreview: React.FC = () => {
             {/* URL Search Mock */}
             <div className="flex items-center space-x-2 px-6 py-1 rounded-full bg-[#0a0a0a] border border-[#2a2a2a] text-xs font-mono text-[#a0a0a0] max-w-md w-full justify-center">
               <span className="text-[#c6f135]">https://</span>
-              <span>app.bugpredict.ai/repository/audit/104</span>
+              <span>app.bugrisk.insight/repository/audit/104</span>
             </div>
 
             <div className="text-[11px] font-mono text-[#c6f135] font-bold">

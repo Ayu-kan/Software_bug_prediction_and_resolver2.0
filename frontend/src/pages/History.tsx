@@ -3,21 +3,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   History as HistoryIcon, ArrowRight, Loader2, FolderGit2,
   Calendar, Sparkles, Filter, Search,
-  ChevronRight, X
+  ChevronRight, X, Trash2, ExternalLink, AlertTriangle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useAnalysisStore } from '../store/analysisStore';
 import { analysisAPI } from '../services/api';
 import { formatDistanceToNow } from 'date-fns';
 
 interface HistoryItem {
   id: number;
+  user_id: number;
+  workspace_id?: number | null;
   repo_name: string;
   repo_url?: string;
   total_files: number;
   high_risk_count: number;
   analysis_mode: string;
   created_at: string;
+  creator_name?: string;
   full_results_json?: any;
   bug_types_detected?: string[];
   suggested_fixes_count?: number;
@@ -26,23 +30,52 @@ interface HistoryItem {
 export const History: React.FC = () => {
   const navigate = useNavigate();
   const { user, activeWorkspace } = useAuthStore();
+  const { setCurrentAnalysis } = useAnalysisStore();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRepoFilter, setSelectedRepoFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRun, setSelectedRun] = useState<HistoryItem | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
-  useEffect(() => {
+  const fetchHistory = () => {
     if (user?.id) {
       setLoading(true);
-      setHistory([]);
       analysisAPI.getHistory(user.id, activeWorkspace?.id).then((res) => {
         if (res.success && Array.isArray(res.history)) {
-          // Parse JSON if needed
-          const formatted = res.history.map((h: any) => ({
-            ...h,
-            full_results_json: typeof h.full_results_json === 'string' ? JSON.parse(h.full_results_json) : (h.full_results_json || [])
-          }));
+          const formatted = res.history.map((h: any) => {
+            let parsedJson = h.full_results_json;
+            if (typeof parsedJson === 'string') {
+              try {
+                parsedJson = JSON.parse(parsedJson);
+              } catch {
+                parsedJson = null;
+              }
+            }
+
+            // Extract tags if present
+            const files = Array.isArray(parsedJson)
+              ? parsedJson
+              : (parsedJson?.all_ranked_files || parsedJson?.hybrid_mode_files || []);
+
+            const tagsSet = new Set<string>();
+            files.forEach((f: any) => {
+              const desc = f.risk_cause_description || '';
+              if (desc.includes('complexity')) tagsSet.add('High Complexity');
+              if (desc.includes('churn')) tagsSet.add('High Code Churn');
+              if (desc.includes('Auth') || desc.includes('Security')) tagsSet.add('Security/Auth');
+              if (desc.includes('Database')) tagsSet.add('Database Risk');
+              if (desc.includes('coupling') || desc.includes('Fan-in')) tagsSet.add('Coupling');
+              if (desc.includes('Historical')) tagsSet.add('Bug Prone');
+            });
+
+            return {
+              ...h,
+              full_results_json: parsedJson,
+              bug_types_detected: Array.from(tagsSet).slice(0, 3)
+            };
+          });
           setHistory(formatted);
         } else {
           setHistory([]);
@@ -56,7 +89,47 @@ export const History: React.FC = () => {
       setHistory([]);
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchHistory();
   }, [user?.id, activeWorkspace?.id]);
+
+  const handleDelete = async (id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!user) return;
+    setDeletingId(id);
+    try {
+      const res = await analysisAPI.delete(id, user.id);
+      if (res.success) {
+        setHistory(prev => prev.filter(item => item.id !== id));
+        if (selectedRun?.id === id) {
+          setSelectedRun(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete analysis:', err);
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  };
+
+  const handleLoadIntoActiveView = (run: HistoryItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (run.full_results_json) {
+      const payload = {
+        ...run.full_results_json,
+        analysis_id: run.id,
+        repo_name: run.repo_name,
+        total_files: run.total_files,
+        high_risk_count: run.high_risk_count,
+        workspace_id: run.workspace_id
+      };
+      setCurrentAnalysis(payload);
+      navigate('/analysis');
+    }
+  };
 
   // Extract unique repo names for filtering
   const uniqueRepos = useMemo(() => {
@@ -73,10 +146,23 @@ export const History: React.FC = () => {
       const matchesRepo = selectedRepoFilter === 'all' || item.repo_name === selectedRepoFilter;
       const matchesSearch = searchQuery.trim() === '' ||
         item.repo_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.analysis_mode?.toLowerCase().includes(searchQuery.toLowerCase());
+        item.analysis_mode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.creator_name && item.creator_name.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesRepo && matchesSearch;
     });
   }, [history, selectedRepoFilter, searchQuery]);
+
+  // Get files list from selected run
+  const selectedRunFiles = useMemo(() => {
+    if (!selectedRun || !selectedRun.full_results_json) return [];
+    if (Array.isArray(selectedRun.full_results_json)) {
+      return selectedRun.full_results_json;
+    }
+    return selectedRun.full_results_json.all_ranked_files ||
+      selectedRun.full_results_json.hybrid_mode_files ||
+      selectedRun.full_results_json.top_10_files ||
+      [];
+  }, [selectedRun]);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-16">
@@ -165,6 +251,11 @@ export const History: React.FC = () => {
                   <span className="px-2.5 py-0.5 rounded-full bg-[#181818] border border-[#2a2a2a] text-[10px] font-mono text-[#a0a0a0]">
                     {run.analysis_mode}
                   </span>
+                  {run.creator_name && activeWorkspace && (
+                    <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-mono">
+                      by {run.creator_name}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-[#a0a0a0]">
@@ -195,8 +286,18 @@ export const History: React.FC = () => {
                 )}
               </div>
 
-              {/* Action Button to Open Details */}
-              <div className="flex items-center space-x-3 shrink-0">
+              {/* Action Buttons */}
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => handleLoadIntoActiveView(run, e)}
+                  title="Load into Active Workspace View"
+                  className="px-3 py-2 rounded-xl bg-[#1a1a1a] hover:bg-[#252525] text-[#c6f135] border border-[#2a2a2a] hover:border-[#c6f135]/40 font-mono text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                >
+                  <ExternalLink size={13} />
+                  <span className="hidden sm:inline">Load Active</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setSelectedRun(run)}
@@ -205,6 +306,38 @@ export const History: React.FC = () => {
                   <span>Inspect Details</span>
                   <ChevronRight size={14} />
                 </button>
+
+                {confirmDeleteId === run.id ? (
+                  <div className="flex items-center space-x-1">
+                    <button
+                      type="button"
+                      disabled={deletingId === run.id}
+                      onClick={(e) => handleDelete(run.id, e)}
+                      className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-mono text-[11px] font-bold transition-all"
+                    >
+                      {deletingId === run.id ? <Loader2 size={12} className="animate-spin" /> : 'Confirm'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="p-1.5 rounded-lg bg-[#222] hover:bg-[#333] text-gray-400 hover:text-white"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title="Delete Scan Record"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDeleteId(run.id);
+                    }}
+                    className="p-2 rounded-xl bg-[#1a1a1a] hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-[#2a2a2a] hover:border-red-500/30 transition-all cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </motion.div>
           ))}
@@ -251,13 +384,23 @@ export const History: React.FC = () => {
                     Analyzed {selectedRun.created_at ? formatDistanceToNow(new Date(selectedRun.created_at), { addSuffix: true }) : 'Recently'} · {selectedRun.analysis_mode}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRun(null)}
-                  className="p-1.5 rounded-lg bg-[#1a1a1a] text-[#a0a0a0] hover:text-white border border-[#2a2a2a]"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => handleLoadIntoActiveView(selectedRun)}
+                    className="px-3 py-1.5 rounded-lg bg-[#c6f135] text-[#0a0a0a] font-mono text-xs font-bold flex items-center space-x-1.5 shadow-[0_0_12px_rgba(198,241,53,0.25)]"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Open in Analysis</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRun(null)}
+                    className="p-1.5 rounded-lg bg-[#1a1a1a] text-[#a0a0a0] hover:text-white border border-[#2a2a2a]"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* Drawer Body: Metrics & Ranked File Inventory */}
@@ -284,13 +427,15 @@ export const History: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-mono font-bold uppercase text-white">Prioritized File Breakdown</h4>
-                    <span className="text-[10px] font-mono text-[#a0a0a0]">AST & ML Probability</span>
+                    <span className="text-[10px] font-mono text-[#a0a0a0]">
+                      {selectedRunFiles.length} files analyzed
+                    </span>
                   </div>
 
                   <div className="space-y-2.5">
-                    {Array.isArray(selectedRun.full_results_json) && selectedRun.full_results_json.length > 0 ? (
-                      selectedRun.full_results_json.map((f: any, idx: number) => {
-                        const prob = Math.round((f.ml_probability || 0) * 100);
+                    {selectedRunFiles.length > 0 ? (
+                      selectedRunFiles.map((f: any, idx: number) => {
+                        const prob = Math.round((f.ml_probability != null ? f.ml_probability : ((f['risk_%'] || 0) / 100)) * 100);
                         const isHigh = prob >= 75;
                         return (
                           <div
@@ -302,7 +447,7 @@ export const History: React.FC = () => {
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                 isHigh ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
                               }`}>
-                                {prob}% Prob
+                                {prob}% Risk
                               </span>
                             </div>
 
@@ -321,7 +466,10 @@ export const History: React.FC = () => {
                         );
                       })
                     ) : (
-                      <p className="text-xs text-[#a0a0a0] font-mono">No detailed file inventory stored for this record.</p>
+                      <div className="p-6 text-center border border-[#2a2a2a] rounded-xl bg-[#121212] space-y-2">
+                        <AlertTriangle size={18} className="mx-auto text-[#f59e0b]" />
+                        <p className="text-xs text-[#a0a0a0] font-mono">No detailed file inventory stored for this record.</p>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -332,19 +480,18 @@ export const History: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setSelectedRun(null)}
-                  className="px-4 py-2 rounded-xl bg-[#181818] text-gray-300 hover:text-white text-xs font-mono"
+                  className="px-4 py-2 rounded-xl bg-[#181818] text-gray-300 hover:text-white text-xs font-mono cursor-pointer"
                 >
                   Close Archive
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedRun(null);
-                    navigate('/analysis');
+                    handleLoadIntoActiveView(selectedRun);
                   }}
-                  className="px-4 py-2 rounded-xl bg-[#c6f135] text-[#0a0a0a] font-bold text-xs flex items-center space-x-1.5 shadow-[0_0_15px_rgba(198,241,53,0.25)]"
+                  className="px-4 py-2 rounded-xl bg-[#c6f135] text-[#0a0a0a] font-bold text-xs flex items-center space-x-1.5 shadow-[0_0_15px_rgba(198,241,53,0.25)] cursor-pointer"
                 >
-                  <span>Re-run Audit on This Repo</span>
+                  <span>Open Full Analysis View</span>
                   <ArrowRight size={13} />
                 </button>
               </div>
@@ -358,3 +505,4 @@ export const History: React.FC = () => {
 };
 
 export default History;
+

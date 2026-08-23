@@ -14,6 +14,7 @@ import os
 import sys
 import json
 import joblib
+import threading
 import pandas as pd
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
@@ -32,7 +33,9 @@ from backend.database.db import (
     remove_workspace_member, log_workspace_activity, get_workspace_activities,
     create_workspace_invitation, get_user_pending_invitations,
     respond_to_workspace_invitation, get_workspace_pending_invitations,
-    cancel_workspace_invitation
+    cancel_workspace_invitation,
+    save_training_samples, save_user_feedback, get_training_stats,
+    get_model_history as db_get_model_history,
 )
 from backend.auth.auth_service import (
     register_user, login_user, update_user_llm_config, get_user_llm_config,
@@ -42,6 +45,7 @@ from backend.auth.security import verify_access_token
 from backend.services.ranking_service import rank_files, get_top_10_risky_files, filter_hybrid_mode
 from backend.services.suspicious_line_service import analyze_suspicious_lines
 from backend.services.llm_service import LLMSolutionEngine
+from backend.services.retrain_service import retrain_models, get_model_status, should_retrain
 from repo.validator import validate_repo_input, TemporaryClone
 from extract_features import extract
 
@@ -127,6 +131,13 @@ class TestConnectionRequest(BaseModel):
     api_key: str
     model: Optional[str] = None
     user_id: Optional[int] = None
+
+class FeedbackRequest(BaseModel):
+    user_id: int
+    file_path: str
+    predicted_risk: float
+    feedback: str  # 'confirmed_bug' or 'not_a_bug'
+    analysis_id: Optional[int] = None
 
 # ----------------- Auth & Config Handlers -----------------
 
@@ -362,6 +373,42 @@ def handle_analysis(repo_path: str, user_id: int, workspace_id: Optional[int] = 
                 description=f"Ran {analysis_mode} on '{repo_name}' ({len(ranked_all)} files, {high_risk_cnt} high risk)"
             )
 
+        # ---- Background Self-Training Data Collection -------------------------
+        # Run a second extraction at cutoff_ratio=0.8 in a background thread.
+        # This generates future_bug labels from the last 20% of commit history
+        # and stores the labeled feature rows as training samples in the DB.
+        def _collect_training_data(repo, is_url, user):
+            train_csv = os.path.join(
+                os.path.dirname(__file__), "..", "..", f"_train_tmp_{user}.csv"
+            )
+            try:
+                if is_url:
+                    with TemporaryClone(repo) as clone_dir:
+                        extract(clone_dir, train_csv, cutoff_ratio=0.8)
+                else:
+                    extract(repo, train_csv, cutoff_ratio=0.8)
+                train_df = pd.read_csv(train_csv)
+                rows_to_save = train_df.to_dict(orient="records")
+                n_saved = save_training_samples(repo, rows_to_save)
+                # Trigger auto-retrain if threshold is reached
+                if n_saved > 0 and should_retrain():
+                    retrain_models(triggered_by="auto")
+            except Exception:
+                pass
+            finally:
+                if os.path.exists(train_csv):
+                    try:
+                        os.remove(train_csv)
+                    except Exception:
+                        pass
+
+        threading.Thread(
+            target=_collect_training_data,
+            args=(repo_path, meta.get("is_url", False), user_id),
+            daemon=True,
+        ).start()
+        # -----------------------------------------------------------------------
+
         return result_payload
     finally:
         if os.path.exists(tmp_csv):
@@ -403,6 +450,42 @@ def handle_delete_analysis(analysis_id: int, user_id: int):
     if success:
         return {"success": True, "message": "Analysis deleted."}
     return {"success": False, "error": "Failed to delete analysis or access denied."}
+
+# ----------------- Self-Training & Feedback Handlers -----------------
+
+def handle_submit_feedback(req: FeedbackRequest):
+    """Records a user's confirmed bug / false positive signal for a scanned file."""
+    if req.feedback not in ("confirmed_bug", "not_a_bug"):
+        return {"success": False, "error": "Invalid feedback value. Use 'confirmed_bug' or 'not_a_bug'."}
+    ok = save_user_feedback(
+        user_id=req.user_id,
+        file_path=req.file_path,
+        predicted_risk=req.predicted_risk,
+        feedback=req.feedback,
+        analysis_id=req.analysis_id,
+    )
+    return {"success": ok, "message": "Feedback saved. Thank you — this improves future predictions!"}
+
+def handle_model_status():
+    """Returns the active model version, sample counts, and retrain progress."""
+    try:
+        status = get_model_status()
+        return {"success": True, **status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_model_history():
+    """Returns a list of all model versions with their performance metrics."""
+    try:
+        history = db_get_model_history(limit=20)
+        return {"success": True, "history": history}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_retrain(triggered_by: str = "admin"):
+    """Triggers an immediate model retraining run. Returns result metrics."""
+    result = retrain_models(triggered_by=triggered_by)
+    return result
 
 def handle_resolve(req: ResolveRequest):
     if req.workspace_id:

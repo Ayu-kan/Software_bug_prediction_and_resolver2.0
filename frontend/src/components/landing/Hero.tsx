@@ -60,7 +60,7 @@ export const Hero: React.FC = () => {
                 AI-powered file-level risk scoring for engineering teams.
               </p>
               <p className="text-sm text-[#a0a0a0] leading-relaxed">
-                BugPredict AI analyzes software repositories, prioritizes risky files using machine learning AST heuristics, predicts defect probabilities, and generates proactive remediation patches before issues reach production.
+                BugRisk insight analyzes software repositories, prioritizes risky files using machine learning AST heuristics, predicts defect probabilities, and generates proactive remediation patches before issues reach production.
               </p>
             </div>
 

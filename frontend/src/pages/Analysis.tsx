@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Loader2, FolderSearch, Settings2 } from 'lucide-react';
+import { Play, Loader2, FolderSearch, Settings2, ThumbsUp, ThumbsDown, CheckCircle2 } from 'lucide-react';
 import { analysisAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useAnalysisStore } from '../store/analysisStore';
@@ -9,7 +9,7 @@ import CodePreview from '../components/code/CodePreview';
 import AiResolution from '../components/ai/AiResolution';
 
 const Analysis = () => {
-  const { user } = useAuthStore();
+  const { user, activeWorkspace } = useAuthStore();
   const { currentAnalysis, setCurrentAnalysis, isLoading, setLoading } = useAnalysisStore();
   
   const [repoPath, setRepoPath] = useState('');
@@ -19,17 +19,22 @@ const Analysis = () => {
   const [previewFile, setPreviewFile] = useState<any>(null);
   const [resolveFile, setResolveFile] = useState<any>(null);
 
+  // Track feedback state per file path: null | 'pending' | 'confirmed_bug' | 'not_a_bug'
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
+
   const handleRunAnalysis = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !repoPath.trim()) return;
 
     setLoading(true);
     setError('');
+    setFeedbackMap({});
     
     try {
       const res = await analysisAPI.run({
         repo_path: repoPath.trim(),
         user_id: user.id,
+        workspace_id: activeWorkspace?.id,
         analysis_mode: mode
       });
 
@@ -42,6 +47,24 @@ const Analysis = () => {
       setError(err.response?.data?.detail || 'An unexpected error occurred during analysis.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFeedback = async (file: any, feedback: 'confirmed_bug' | 'not_a_bug') => {
+    if (!user) return;
+    const key = file.file;
+    setFeedbackMap(prev => ({ ...prev, [key]: 'pending' }));
+    try {
+      await analysisAPI.submitFeedback({
+        user_id: user.id,
+        file_path: file.file,
+        predicted_risk: file.ml_probability ?? (file['risk_%'] != null ? file['risk_%'] / 100 : 0.5),
+        feedback,
+        analysis_id: currentAnalysis?.analysis_id,
+      });
+      setFeedbackMap(prev => ({ ...prev, [key]: feedback }));
+    } catch {
+      setFeedbackMap(prev => ({ ...prev, [key]: '' }));
     }
   };
 
@@ -146,12 +169,71 @@ const Analysis = () => {
             </div>
 
             <div className="pt-4">
-              <h2 className="text-xl font-semibold mb-4">Risk Inventory</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Risk Inventory</h2>
+                <p className="text-xs text-muted-foreground bg-secondary/50 border border-border rounded-full px-3 py-1">
+                  ✨ Your feedback trains the model
+                </p>
+              </div>
               <RiskTable 
                 files={displayFiles} 
                 onPreview={setPreviewFile}
                 onResolve={setResolveFile}
               />
+
+              {/* Per-File Feedback Buttons */}
+              {displayFiles.length > 0 && (
+                <div className="mt-6 space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground mb-3">
+                    Help improve predictions — mark files as confirmed bugs or false positives:
+                  </p>
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    {displayFiles.slice(0, 20).map((file: any) => {
+                      const key = file.file;
+                      const fbState = feedbackMap[key];
+                      const fileName = key.split('/').pop() || key;
+                      const risk = file['risk_%'] ?? Math.round((file.ml_probability ?? 0) * 100);
+
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between bg-secondary/30 border border-border rounded-lg px-4 py-2.5 gap-3"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-mono truncate" title={key}>{fileName}</p>
+                            <p className="text-xs text-muted-foreground">Risk: {risk}%</p>
+                          </div>
+                          {fbState === 'confirmed_bug' || fbState === 'not_a_bug' ? (
+                            <div className="flex items-center space-x-1.5 text-xs text-[#c6f135]">
+                              <CheckCircle2 size={13} />
+                              <span>{fbState === 'confirmed_bug' ? 'Confirmed Bug' : 'Not a Bug'} — saved!</span>
+                            </div>
+                          ) : fbState === 'pending' ? (
+                            <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                          ) : (
+                            <div className="flex items-center space-x-2 flex-shrink-0">
+                              <button
+                                onClick={() => handleFeedback(file, 'confirmed_bug')}
+                                className="flex items-center space-x-1 text-xs bg-destructive/10 hover:bg-destructive/20 border border-destructive/30 text-destructive rounded-md px-2.5 py-1.5 transition-all"
+                              >
+                                <ThumbsUp size={11} />
+                                <span>Confirmed Bug</span>
+                              </button>
+                              <button
+                                onClick={() => handleFeedback(file, 'not_a_bug')}
+                                className="flex items-center space-x-1 text-xs bg-secondary/60 hover:bg-secondary border border-border rounded-md px-2.5 py-1.5 transition-all"
+                              >
+                                <ThumbsDown size={11} />
+                                <span>Not a Bug</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -196,3 +278,4 @@ const Analysis = () => {
 };
 
 export default Analysis;
+

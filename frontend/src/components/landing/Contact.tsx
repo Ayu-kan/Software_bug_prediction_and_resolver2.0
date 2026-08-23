@@ -53,7 +53,7 @@ export const Contact: React.FC = () => {
             {/* Contact Rows with Icons */}
             <div className="space-y-4 pt-4">
               <a
-                href="mailto:support@bugpredict.ai"
+                href="mailto:support@bugrisk.insight"
                 className="flex items-center space-x-3.5 p-4 rounded-2xl bg-[#121212] border border-[#2a2a2a] hover:border-[#c6f135]/40 transition-all text-gray-300 hover:text-white glass-card"
               >
                 <div className="p-2.5 rounded-xl bg-[#1a1a1a] text-[#c6f135] border border-[#2a2a2a]">
@@ -61,7 +61,7 @@ export const Contact: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-mono text-[#a0a0a0] uppercase">Direct Email</p>
-                  <p className="text-sm font-semibold text-white">support@bugpredict.ai</p>
+                  <p className="text-sm font-semibold text-white">support@bugrisk.insight</p>
                 </div>
               </a>
 
@@ -76,7 +76,7 @@ export const Contact: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-mono text-[#a0a0a0] uppercase">GitHub Organization</p>
-                  <p className="text-sm font-semibold text-white">github.com/bugpredict-ai</p>
+                  <p className="text-sm font-semibold text-white">github.com/bugrisk.insight</p>
                 </div>
               </a>
 
@@ -89,7 +89,7 @@ export const Contact: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-mono text-[#a0a0a0] uppercase">Technical Documentation</p>
-                  <p className="text-sm font-semibold text-white">docs.bugpredict.ai</p>
+                  <p className="text-sm font-semibold text-white">docs.bugrisk.insight</p>
                 </div>
               </a>
             </div>

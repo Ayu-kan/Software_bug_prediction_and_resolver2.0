@@ -43,10 +43,10 @@ export const Comparison: React.FC = () => {
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-3">
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#c6f135]">
-            // WHY BUGPREDICT
+            // WHY BUGRISK INSIGHT
           </span>
           <h2 className="text-3xl sm:text-4xl font-extrabold uppercase tracking-tight text-white">
-            TRADITIONAL STATIC TOOLS VS BUGPREDICT AI
+            TRADITIONAL STATIC TOOLS VS BUGRISK INSIGHT
           </h2>
           <p className="text-sm sm:text-base text-[#a0a0a0]">
             Why forward-thinking engineering teams switch to predictive ML defect scoring.
@@ -68,7 +68,7 @@ export const Comparison: React.FC = () => {
                   <th className="py-4 px-6 font-bold w-1/3">Feature Capability</th>
                   <th className="py-4 px-6 font-bold w-1/3 text-gray-400">Traditional Tools</th>
                   <th className="py-4 px-6 font-bold w-1/3 text-[#c6f135] bg-[#c6f135]/5 border-l border-[#2a2a2a]">
-                    BugPredict AI
+                    BugRisk insight
                   </th>
                 </tr>
               </thead>

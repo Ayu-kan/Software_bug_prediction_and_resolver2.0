@@ -17,8 +17,8 @@ from pydantic import BaseModel
 
 from backend.api.app import (
     RegisterRequest, LoginRequest, ConfigRequest, AnalysisRequest, ResolveRequest,
-    TestConnectionRequest, CreateWorkspaceRequest, InviteMemberRequest, RespondInviteRequest,
-    UpdateRoleRequest, RemoveMemberRequest,
+    TestConnectionRequest, FeedbackRequest, CreateWorkspaceRequest, InviteMemberRequest,
+    RespondInviteRequest, UpdateRoleRequest, RemoveMemberRequest,
     handle_register, handle_login, handle_config, handle_get_config,
     handle_create_workspace, handle_get_user_workspaces, handle_get_workspace_details,
     handle_invite_member, handle_get_user_invitations, handle_respond_invitation,
@@ -26,7 +26,8 @@ from backend.api.app import (
     handle_update_member_role, handle_remove_member,
     handle_get_workspace_activities, handle_analysis, handle_get_latest_analysis,
     handle_get_user_history, handle_get_analysis_details, handle_delete_analysis,
-    handle_resolve, handle_get_solutions, handle_test_connection, handle_get_file_content
+    handle_resolve, handle_get_solutions, handle_test_connection, handle_get_file_content,
+    handle_submit_feedback, handle_model_status, handle_model_history, handle_retrain,
 )
 
 from backend.database.db import init_db
@@ -244,6 +245,28 @@ def delete_analysis(analysis_id: int, user_id: int = Query(...)):
 @app.get("/analysis/file-content")
 def get_file_content(file_path: str, repo_path: Optional[str] = None):
     return handle_get_file_content(file_path, repo_path)
+
+# ----------------- Self-Training & Feedback Routes -----------------
+
+@app.post("/analysis/feedback")
+def submit_feedback(req: FeedbackRequest):
+    """Submit a 'confirmed_bug' or 'not_a_bug' signal for a scanned file."""
+    return handle_submit_feedback(req)
+
+@app.get("/model/status")
+def model_status():
+    """Returns current active model version, sample counts, and retrain progress."""
+    return handle_model_status()
+
+@app.get("/model/history")
+def model_history():
+    """Returns a list of all model versions with their evaluation metrics."""
+    return handle_model_history()
+
+@app.post("/model/retrain")
+def trigger_retrain(triggered_by: str = Query(default="admin")):
+    """Triggers an immediate model retraining run using all accumulated labeled data."""
+    return handle_retrain(triggered_by)
 
 @app.get("/health")
 def health_check():

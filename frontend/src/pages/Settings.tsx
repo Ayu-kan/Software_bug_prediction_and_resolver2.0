@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import type { LlmConfig } from '../store/authStore';
-import { authAPI, analysisAPI } from '../services/api';
+import { authAPI, analysisAPI, modelAPI } from '../services/api';
 import {
   KeyRound, CheckCircle2, Loader2, Save, Trash2, ShieldCheck,
-  AlertCircle, Zap, Wifi, WifiOff, ChevronDown, Eye, EyeOff
+  AlertCircle, Zap, Wifi, WifiOff, ChevronDown, Eye, EyeOff,
+  BrainCircuit, TrendingUp, RefreshCw, History, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -167,6 +168,45 @@ const Settings = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ---- ML Model Self-Training State ----
+  const [modelStatus, setModelStatus] = useState<any>(null);
+  const [modelHistory, setModelHistory] = useState<any[]>([]);
+  const [retraining, setRetraining] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [retrainResult, setRetrainResult] = useState<any>(null);
+
+  useEffect(() => {
+    const loadModelStatus = async () => {
+      try {
+        const [statusRes, histRes] = await Promise.all([
+          modelAPI.getStatus(),
+          modelAPI.getHistory(),
+        ]);
+        if (statusRes.success) setModelStatus(statusRes);
+        if (histRes.success) setModelHistory(histRes.history || []);
+      } catch { }
+    };
+    loadModelStatus();
+  }, []);
+
+  const handleRetrain = async () => {
+    setRetraining(true);
+    setRetrainResult(null);
+    try {
+      const res = await modelAPI.retrain('admin');
+      setRetrainResult(res);
+      if (res.success) {
+        const [statusRes, histRes] = await Promise.all([
+          modelAPI.getStatus(),
+          modelAPI.getHistory(),
+        ]);
+        if (statusRes.success) setModelStatus(statusRes);
+        if (histRes.success) setModelHistory(histRes.history || []);
+      }
+    } catch { }
+    finally { setRetraining(false); }
   };
 
   return (
@@ -411,6 +451,143 @@ const Settings = () => {
             })}
           </div>
         </div>
+
+        {/* ---- ML Model Intelligence Panel ---- */}
+        <div className="bg-[#121212] border border-[#2a2a2a] rounded-2xl p-6 space-y-5">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 rounded-xl bg-[#c6f135]/10 flex items-center justify-center">
+              <BrainCircuit size={18} className="text-[#c6f135]" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold">ML Model Intelligence</h2>
+              <p className="text-xs text-muted-foreground">Self-improving model that learns from every repository scan and your feedback</p>
+            </div>
+          </div>
+
+          {modelStatus ? (
+            <>
+              {/* Active model metrics */}
+              {modelStatus.active_model ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {[
+                    { label: 'Version', value: modelStatus.active_model.version_tag },
+                    { label: 'Algorithm', value: modelStatus.active_model.algorithm?.replace('_', ' ') },
+                    { label: 'Train Samples', value: modelStatus.active_model.training_samples },
+                    { label: 'Precision', value: modelStatus.active_model.precision_score != null ? `${(modelStatus.active_model.precision_score * 100).toFixed(1)}%` : '—' },
+                    { label: 'Recall', value: modelStatus.active_model.recall_score != null ? `${(modelStatus.active_model.recall_score * 100).toFixed(1)}%` : '—' },
+                    { label: 'PR-AUC', value: modelStatus.active_model.pr_auc != null ? `${(modelStatus.active_model.pr_auc * 100).toFixed(1)}%` : '—' },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-[#0d0d0d] border border-[#2a2a2a] rounded-xl p-3">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
+                      <p className="text-sm font-semibold font-mono">{value ?? '—'}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground bg-[#0d0d0d] border border-[#2a2a2a] rounded-xl p-4">
+                  No model version recorded yet. Run a repository scan to start collecting training data.
+                </div>
+              )}
+
+              {/* Sample progress */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{modelStatus.pending_samples} new samples / {modelStatus.retrain_threshold} needed for auto-retrain</span>
+                  <span>{modelStatus.total_labeled} total labeled</span>
+                </div>
+                <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#c6f135] rounded-full transition-all"
+                    style={{ width: `${Math.min(100, ((modelStatus.pending_samples ?? 0) / (modelStatus.retrain_threshold ?? 50)) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {modelStatus.user_labeled} user-labeled · {modelStatus.auto_labeled} auto-labeled (from commit history)
+                </p>
+              </div>
+
+              {/* Retrain button */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={handleRetrain}
+                  disabled={retraining}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-[#c6f135]/10 hover:bg-[#c6f135]/20 border border-[#c6f135]/30 text-[#c6f135] text-sm font-medium transition-all disabled:opacity-50"
+                >
+                  {retraining ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  <span>{retraining ? 'Retraining...' : 'Retrain Now'}</span>
+                </button>
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-secondary/40 hover:bg-secondary/60 border border-border text-sm font-medium transition-all"
+                >
+                  <History size={14} />
+                  <span>Model History ({modelHistory.length})</span>
+                  <ChevronRight size={12} className={`transition-transform ${showHistory ? 'rotate-90' : ''}`} />
+                </button>
+              </div>
+
+              {/* Retrain result */}
+              {retrainResult && (
+                <div className={`p-3 rounded-xl border text-sm ${
+                  retrainResult.success
+                    ? 'bg-green-500/5 border-green-500/20 text-green-400'
+                    : 'bg-destructive/10 border-destructive/20 text-destructive'
+                }`}>
+                  {retrainResult.success
+                    ? `✓ Model retrained: ${retrainResult.version_tag} | Best: ${retrainResult.best_model} | PR-AUC: ${((retrainResult.metrics?.pr_auc ?? 0) * 100).toFixed(1)}%`
+                    : `✗ ${retrainResult.error}`
+                  }
+                </div>
+              )}
+
+              {/* Model history table */}
+              <AnimatePresence>
+                {showHistory && modelHistory.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="overflow-x-auto rounded-xl border border-[#2a2a2a]">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[#2a2a2a] bg-[#0d0d0d]">
+                            {['Version', 'Algorithm', 'Samples', 'Precision', 'Recall', 'PR-AUC', 'By', 'Date'].map(h => (
+                              <th key={h} className="px-3 py-2 text-left text-muted-foreground font-medium">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {modelHistory.map((v: any) => (
+                            <tr key={v.id} className={`border-b border-[#1a1a1a] hover:bg-[#141414] transition-colors ${
+                              v.is_active ? 'bg-[#c6f135]/5' : ''
+                            }`}>
+                              <td className="px-3 py-2 font-mono font-semibold text-[#c6f135]">{v.version_tag}{v.is_active ? ' ✓' : ''}</td>
+                              <td className="px-3 py-2 capitalize">{v.algorithm?.replace('_', ' ')}</td>
+                              <td className="px-3 py-2">{v.training_samples}</td>
+                              <td className="px-3 py-2">{v.precision_score != null ? `${(v.precision_score * 100).toFixed(1)}%` : '—'}</td>
+                              <td className="px-3 py-2">{v.recall_score != null ? `${(v.recall_score * 100).toFixed(1)}%` : '—'}</td>
+                              <td className="px-3 py-2">{v.pr_auc != null ? `${(v.pr_auc * 100).toFixed(1)}%` : '—'}</td>
+                              <td className="px-3 py-2 capitalize">{v.triggered_by}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{v.created_at?.split('T')[0]}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </>
+          ) : (
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              <span>Loading model status...</span>
+            </div>
+          )}
+        </div>
+
       </div>
     </motion.div>
   );

@@ -138,6 +138,68 @@ def init_db():
         )
     """)
 
+    # 8. Training Samples — Accumulates labeled feature vectors for self-training
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS training_samples (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo_url               TEXT NOT NULL,
+            file_path              TEXT NOT NULL,
+            loc                    REAL DEFAULT 0,
+            complexity             REAL DEFAULT 0,
+            function_count         REAL DEFAULT 0,
+            avg_function_size      REAL DEFAULT 0,
+            max_function_size      REAL DEFAULT 0,
+            dependency_count       REAL DEFAULT 0,
+            commit_count           REAL DEFAULT 0,
+            developer_count        REAL DEFAULT 0,
+            lines_added            REAL DEFAULT 0,
+            lines_deleted          REAL DEFAULT 0,
+            code_churn             REAL DEFAULT 0,
+            recent_commit_count    REAL DEFAULT 0,
+            days_since_last_change REAL DEFAULT 0,
+            previous_bug_count     REAL DEFAULT 0,
+            auto_label             INTEGER DEFAULT NULL,
+            user_label             INTEGER DEFAULT NULL,
+            used_in_training       INTEGER DEFAULT 0,
+            created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 9. Model Versions — Tracks every retrain run with performance metrics
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS model_versions (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            version_tag      TEXT NOT NULL,
+            algorithm        TEXT NOT NULL,
+            training_samples INTEGER NOT NULL,
+            precision_score  REAL DEFAULT NULL,
+            recall_score     REAL DEFAULT NULL,
+            f1_score         REAL DEFAULT NULL,
+            roc_auc          REAL DEFAULT NULL,
+            pr_auc           REAL DEFAULT NULL,
+            top20_recall     REAL DEFAULT NULL,
+            model_path       TEXT NOT NULL,
+            is_active        INTEGER DEFAULT 0,
+            triggered_by     TEXT DEFAULT 'auto',
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # 10. User Feedback — Per-file confirmed/disputed signals from users
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_feedback (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id        INTEGER NOT NULL,
+            analysis_id    INTEGER DEFAULT NULL,
+            file_path      TEXT NOT NULL,
+            predicted_risk REAL NOT NULL,
+            feedback       TEXT NOT NULL,
+            created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (analysis_id) REFERENCES analyses (id) ON DELETE CASCADE
+        )
+    """)
+
     # Auto-migrate missing columns for existing users table
     cursor.execute("PRAGMA table_info(users)")
     u_cols = [r["name"] for r in cursor.fetchall()]
@@ -169,9 +231,10 @@ def init_db():
         cursor.execute("ALTER TABLE workspace_invites ADD COLUMN email TEXT DEFAULT ''")
     if "status" not in wi_cols:
         cursor.execute("ALTER TABLE workspace_invites ADD COLUMN status TEXT DEFAULT 'pending'")
-    
+
     conn.commit()
     conn.close()
+
 
 # ----------------- Analysis & Solution Functions -----------------
 
@@ -230,8 +293,15 @@ def get_user_analyses_list(user_id: int, workspace_id: Optional[int] = None):
     cursor = conn.cursor()
     if workspace_id:
         cursor.execute(
+            "SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+            (workspace_id, user_id)
+        )
+        if not cursor.fetchone():
+            conn.close()
+            return []
+        cursor.execute(
             """
-            SELECT a.id, a.user_id, a.workspace_id, a.repo_name, a.total_files, a.high_risk_count, a.analysis_mode, a.created_at, u.username as creator_name
+            SELECT a.id, a.user_id, a.workspace_id, a.repo_name, a.total_files, a.high_risk_count, a.analysis_mode, a.full_results_json, a.created_at, u.username as creator_name
             FROM analyses a
             LEFT JOIN users u ON a.user_id = u.id
             WHERE a.workspace_id = ?
@@ -242,7 +312,7 @@ def get_user_analyses_list(user_id: int, workspace_id: Optional[int] = None):
     else:
         cursor.execute(
             """
-            SELECT a.id, a.user_id, a.workspace_id, a.repo_name, a.total_files, a.high_risk_count, a.analysis_mode, a.created_at, u.username as creator_name
+            SELECT a.id, a.user_id, a.workspace_id, a.repo_name, a.total_files, a.high_risk_count, a.analysis_mode, a.full_results_json, a.created_at, u.username as creator_name
             FROM analyses a
             LEFT JOIN users u ON a.user_id = u.id
             WHERE a.user_id = ? AND (a.workspace_id IS NULL OR a.workspace_id = 0)
@@ -278,7 +348,28 @@ def get_analysis_by_id(analysis_id: int, user_id: int, workspace_id: Optional[in
 def delete_user_analysis(analysis_id: int, user_id: int) -> bool:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM analyses WHERE id = ? AND user_id = ?", (analysis_id, user_id))
+    cursor.execute("SELECT id, user_id, workspace_id FROM analyses WHERE id = ?", (analysis_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+    
+    is_creator = (row["user_id"] == user_id)
+    is_admin = False
+    if row["workspace_id"]:
+        cursor.execute(
+            "SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+            (row["workspace_id"], user_id)
+        )
+        m_row = cursor.fetchone()
+        if m_row and m_row["role"] == "admin":
+            is_admin = True
+
+    if not is_creator and not is_admin:
+        conn.close()
+        return False
+
+    cursor.execute("DELETE FROM analyses WHERE id = ?", (analysis_id,))
     affected = cursor.rowcount
     conn.commit()
     conn.close()
@@ -765,6 +856,242 @@ def get_workspace_activities(workspace_id: int, limit: int = 20) -> List[Dict[st
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ----------------- Self-Training Helper Functions -----------------
+
+FEATURE_COLS = [
+    "loc", "complexity", "function_count", "avg_function_size", "max_function_size",
+    "dependency_count", "commit_count", "developer_count", "lines_added",
+    "lines_deleted", "code_churn", "recent_commit_count", "days_since_last_change",
+    "previous_bug_count",
+]
+
+def save_training_samples(repo_url: str, rows: List[Dict[str, Any]]) -> int:
+    """
+    Bulk-inserts feature vectors with auto_label into training_samples.
+    Each row must have the 14 FEATURE_COLS plus 'file' and 'future_bug'.
+    Returns the number of rows inserted.
+    """
+    if not rows:
+        return 0
+    conn = get_db()
+    cursor = conn.cursor()
+    inserted = 0
+    for row in rows:
+        file_path = row.get("file", "")
+        auto_label = int(row.get("future_bug", 0)) if row.get("future_bug") is not None else None
+        cursor.execute(
+            """
+            INSERT INTO training_samples
+                (repo_url, file_path, loc, complexity, function_count, avg_function_size,
+                 max_function_size, dependency_count, commit_count, developer_count,
+                 lines_added, lines_deleted, code_churn, recent_commit_count,
+                 days_since_last_change, previous_bug_count, auto_label)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                repo_url, file_path,
+                float(row.get("loc", 0) or 0),
+                float(row.get("complexity", 0) or 0),
+                float(row.get("function_count", 0) or 0),
+                float(row.get("avg_function_size", 0) or 0),
+                float(row.get("max_function_size", 0) or 0),
+                float(row.get("dependency_count", 0) or 0),
+                float(row.get("commit_count", 0) or 0),
+                float(row.get("developer_count", 0) or 0),
+                float(row.get("lines_added", 0) or 0),
+                float(row.get("lines_deleted", 0) or 0),
+                float(row.get("code_churn", 0) or 0),
+                float(row.get("recent_commit_count", 0) or 0),
+                float(row.get("days_since_last_change", 0) or 0),
+                float(row.get("previous_bug_count", 0) or 0),
+                auto_label,
+            )
+        )
+        inserted += 1
+    conn.commit()
+    conn.close()
+    return inserted
+
+
+def get_training_dataset() -> List[Dict[str, Any]]:
+    """
+    Returns all training samples that have at least one label (auto or user).
+    User label takes precedence over auto_label when both are present.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT *, COALESCE(user_label, auto_label) AS label
+        FROM training_samples
+        WHERE user_label IS NOT NULL OR auto_label IS NOT NULL
+        ORDER BY created_at ASC
+        """
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_training_stats() -> Dict[str, Any]:
+    """Returns summary stats for the training data and model versions."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT COUNT(*) AS total FROM training_samples WHERE user_label IS NOT NULL OR auto_label IS NOT NULL"
+    )
+    total_labeled = (cursor.fetchone() or {}).get("total", 0)
+
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM training_samples WHERE used_in_training = 0 AND (user_label IS NOT NULL OR auto_label IS NOT NULL)"
+    )
+    pending = (cursor.fetchone() or {}).get("cnt", 0)
+
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM training_samples WHERE user_label IS NOT NULL"
+    )
+    user_labeled = (cursor.fetchone() or {}).get("cnt", 0)
+
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM training_samples WHERE auto_label IS NOT NULL"
+    )
+    auto_labeled = (cursor.fetchone() or {}).get("cnt", 0)
+
+    cursor.execute(
+        """
+        SELECT version_tag, algorithm, training_samples, precision_score, recall_score,
+               f1_score, roc_auc, pr_auc, top20_recall, model_path, created_at
+        FROM model_versions WHERE is_active = 1 ORDER BY id DESC LIMIT 1
+        """
+    )
+    active_row = cursor.fetchone()
+    active_model = dict(active_row) if active_row else None
+
+    conn.close()
+    return {
+        "total_labeled": total_labeled,
+        "auto_labeled": auto_labeled,
+        "user_labeled": user_labeled,
+        "pending_samples": pending,
+        "active_model": active_model,
+    }
+
+
+def save_model_version(
+    version_tag: str,
+    algorithm: str,
+    training_samples: int,
+    metrics: Dict[str, Any],
+    model_path: str,
+    triggered_by: str = "auto",
+) -> int:
+    """Records a retrain run in model_versions. Returns the new version id."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO model_versions
+            (version_tag, algorithm, training_samples, precision_score, recall_score,
+             f1_score, roc_auc, pr_auc, top20_recall, model_path, is_active, triggered_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """,
+        (
+            version_tag, algorithm, training_samples,
+            metrics.get("precision"), metrics.get("recall"),
+            metrics.get("f1"), metrics.get("roc_auc"),
+            metrics.get("pr_auc"), metrics.get("top20_recall"),
+            model_path, triggered_by,
+        )
+    )
+    version_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return version_id
+
+
+def set_active_model_version(version_id: int) -> None:
+    """Marks a specific model version as active; clears all other is_active flags."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE model_versions SET is_active = 0")
+    cursor.execute("UPDATE model_versions SET is_active = 1 WHERE id = ?", (version_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_model_history(limit: int = 20) -> List[Dict[str, Any]]:
+    """Returns list of model versions ordered newest first."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, version_tag, algorithm, training_samples, precision_score, recall_score,
+               f1_score, roc_auc, pr_auc, top20_recall, model_path, is_active,
+               triggered_by, created_at
+        FROM model_versions ORDER BY id DESC LIMIT ?
+        """,
+        (limit,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_user_feedback(
+    user_id: int,
+    file_path: str,
+    predicted_risk: float,
+    feedback: str,
+    analysis_id: Optional[int] = None,
+) -> bool:
+    """
+    Saves a user feedback signal ('confirmed_bug' or 'not_a_bug') for a file.
+    Also updates the user_label on the most recent matching training_sample row.
+    """
+    if feedback not in ("confirmed_bug", "not_a_bug"):
+        return False
+    label = 1 if feedback == "confirmed_bug" else 0
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO user_feedback (user_id, analysis_id, file_path, predicted_risk, feedback)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (user_id, analysis_id, file_path, predicted_risk, feedback)
+    )
+    # Back-propagate label to the most recent matching training_sample
+    cursor.execute(
+        """
+        UPDATE training_samples SET user_label = ?
+        WHERE file_path = ? AND id = (
+            SELECT id FROM training_samples WHERE file_path = ? ORDER BY created_at DESC LIMIT 1
+        )
+        """,
+        (label, file_path, file_path)
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def mark_samples_used(sample_ids: List[int]) -> None:
+    """Marks training sample rows as used_in_training = 1 after a retrain."""
+    if not sample_ids:
+        return
+    conn = get_db()
+    cursor = conn.cursor()
+    placeholders = ",".join("?" * len(sample_ids))
+    cursor.execute(
+        f"UPDATE training_samples SET used_in_training = 1 WHERE id IN ({placeholders})",
+        sample_ids
+    )
+    conn.commit()
+    conn.close()
+
 
 if __name__ == "__main__":
     init_db()
