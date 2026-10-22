@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   BrainCircuit, Play, CheckCircle2, AlertCircle, RefreshCw,
-  Trophy, Activity, Zap, Layers, BarChart2, Check, ArrowRight,
-  Database, GitCommit, Sliders, ShieldCheck
+  Trophy, BarChart2, Check, ShieldCheck
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell
+  ResponsiveContainer
 } from 'recharts';
 import { modelAPI, datasetAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 export const ModelWorkbench: React.FC = () => {
-  const { user, activeWorkspace } = useAuthStore();
+  const { activeWorkspace } = useAuthStore();
   const [modelData, setModelData] = useState<any | null>(null);
   const [datasets, setDatasets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
