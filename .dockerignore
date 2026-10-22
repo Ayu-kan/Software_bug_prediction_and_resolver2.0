@@ -20,7 +20,9 @@ htmlcov/
 frontend/node_modules/
 frontend/dist/
 frontend/.oxlintrc.json
-backend/database/
+*.db-journal
+*.db-wal
+*.db-shm
 node_modules/
 dist/
 npm-debug.log*

@@ -49,11 +49,11 @@ COPY data/ ./data/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Expose backend API and SPA port
-EXPOSE 8000
+EXPOSE 8000 10000
 
-# Health check
+# Health check (supports dynamic PORT e.g. on Render)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -f "http://localhost:${PORT:-8000}/health" || exit 1
 
-# Start the FastAPI application with Uvicorn
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the FastAPI application with Uvicorn (binds to Render's $PORT or defaults to 8000)
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

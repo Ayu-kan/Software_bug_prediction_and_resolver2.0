@@ -382,3 +382,9 @@ if os.path.exists(frontend_dist) and os.path.exists(os.path.join(frontend_dist, 
         if full_path and os.path.exists(target) and os.path.isfile(target):
             return FileResponse(target)
         return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)
+

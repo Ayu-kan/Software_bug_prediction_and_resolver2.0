@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: bug-prediction-platform
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: ENVIRONMENT
+        value: production
