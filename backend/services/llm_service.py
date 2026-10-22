@@ -34,6 +34,18 @@ PROVIDER_DEFAULTS = {
         "models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-1.5-flash-8b"],
         "key_prefix": "AIzaSy",
     },
+    "grok": {
+        "url": "https://api.x.ai/v1/chat/completions",
+        "default_model": "grok-2",
+        "models": ["grok-2", "grok-2-mini", "grok-beta"],
+        "key_prefix": "xai-",
+    },
+    "anthropic": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "default_model": "claude-3-5-sonnet-20241022",
+        "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        "key_prefix": "sk-ant-",
+    },
     "groq": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
         "default_model": "llama-3.1-8b-instant",
@@ -294,7 +306,28 @@ class LLMSolutionEngine:
             return self._make_gemini_request(prompt, max_tokens)
 
         try:
-            # OpenAI and Groq share the same API format
+            if self.provider == "anthropic":
+                url = "https://api.anthropic.com/v1/messages"
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01"
+                }
+                body = json.dumps({
+                    "model": self.model,
+                    "max_tokens": max_tokens,
+                    "messages": [{"role": "user", "content": prompt}]
+                }).encode("utf-8")
+
+                req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    contents = data.get("content", [])
+                    if not contents:
+                        raise Exception("Anthropic returned empty content.")
+                    return contents[0].get("text", "")
+
+            # OpenAI, Grok (xAI), and Groq share standard chat completions API format
             provider_cfg = PROVIDER_DEFAULTS.get(self.provider, PROVIDER_DEFAULTS["openai"])
             url = provider_cfg["url"]
             headers = {

@@ -51,9 +51,9 @@ export const Navbar: React.FC = () => {
 
   const navLinks = [
     { to: '/', label: 'Home', isHash: false },
-    { to: '/#how-it-works', label: 'Working', isHash: true },
-    { to: '/#capabilities', label: 'Features', isHash: true },
     { to: '/dashboard', label: 'Dashboard', isHash: false },
+    { to: '/datasets', label: 'Datasets', isHash: false },
+    { to: '/models', label: 'Models', isHash: false },
     { to: '/analysis', label: 'Analysis', isHash: false },
     { to: '/history', label: 'History', isHash: false },
     { to: '/workspaces', label: 'Workspaces', isHash: false, badge: pendingInvitesCount },

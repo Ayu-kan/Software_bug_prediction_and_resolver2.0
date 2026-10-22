@@ -4,24 +4,28 @@ import type { User, Workspace, WorkspaceRole } from "../types";
 import { useAnalysisStore } from './analysisStore';
 
 export interface LlmConfig {
-  provider: 'openai' | 'gemini' | 'groq';
+  provider: 'openai' | 'gemini' | 'grok' | 'anthropic';
   keys: {
     openai: string;
     gemini: string;
-    groq: string;
+    grok: string;
+    anthropic: string;
   };
   model?: string;
 }
 
 interface AuthState {
   user: User | null;
+  token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   llmConfig: LlmConfig | null;
   activeWorkspace: Workspace | null;
   userWorkspaces: Workspace[];
   
-  login: (user: User, initialConfig?: Partial<LlmConfig>) => void;
+  login: (user: User, initialConfig?: Partial<LlmConfig>, token?: string, refreshToken?: string) => void;
   logout: () => void;
+  setTokens: (token: string, refreshToken?: string) => void;
   setLlmConfig: (config: LlmConfig | null) => void;
   setActiveWorkspace: (ws: Workspace | null) => void;
   setUserWorkspaces: (workspaces: Workspace[]) => void;
@@ -30,19 +34,20 @@ interface AuthState {
   getCurrentRole: () => WorkspaceRole;
 }
 
-const DEFAULT_KEYS = { openai: '', gemini: '', groq: '' };
+const DEFAULT_KEYS = { openai: '', gemini: '', grok: '', anthropic: '' };
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
+      token: null,
+      refreshToken: null,
       isAuthenticated: false,
       llmConfig: null,
       activeWorkspace: null,
       userWorkspaces: [],
 
-      login: (user, initialConfig) => {
-        // Enforce strict user isolation: clear any stale analysis from memory
+      login: (user, initialConfig, token, refreshToken) => {
         try {
           useAnalysisStore.getState().clearAnalysis();
         } catch {}
@@ -51,10 +56,13 @@ export const useAuthStore = create<AuthState>()(
           ...DEFAULT_KEYS,
           ...(initialConfig?.keys || {})
         };
-        const provider = (initialConfig?.provider || 'openai') as 'openai' | 'gemini' | 'groq';
+        const rawProv = (initialConfig?.provider as string) || 'openai';
+        const provider = (rawProv === 'groq' ? 'grok' : rawProv) as 'openai' | 'gemini' | 'grok' | 'anthropic';
         
         set({
           user,
+          token: token || null,
+          refreshToken: refreshToken || null,
           isAuthenticated: true,
           activeWorkspace: null,
           userWorkspaces: [],
@@ -66,6 +74,13 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
+      setTokens: (token: string, refreshToken?: string) => {
+        set((state) => ({
+          token,
+          refreshToken: refreshToken || state.refreshToken
+        }));
+      },
+
       logout: () => {
         try {
           useAnalysisStore.getState().clearAnalysis();
@@ -75,6 +90,8 @@ export const useAuthStore = create<AuthState>()(
         } catch {}
         set({
           user: null,
+          token: null,
+          refreshToken: null,
           isAuthenticated: false,
           llmConfig: null,
           activeWorkspace: null,
@@ -111,3 +128,4 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+

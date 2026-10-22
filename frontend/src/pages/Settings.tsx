@@ -9,13 +9,13 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-type Provider = 'openai' | 'gemini' | 'groq';
+type Provider = 'openai' | 'gemini' | 'grok' | 'anthropic';
 
 const PROVIDERS: { id: Provider; label: string; description: string; placeholder: string; color: string; bg: string }[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    description: 'GPT-4o · GPT-4 Turbo · GPT-3.5',
+    description: 'GPT-4o · GPT-4o Mini · GPT-4 Turbo',
     placeholder: 'sk-...',
     color: 'text-emerald-400',
     bg: 'bg-emerald-500',
@@ -23,43 +23,54 @@ const PROVIDERS: { id: Provider; label: string; description: string; placeholder
   {
     id: 'gemini',
     label: 'Google Gemini',
-    description: 'Gemini 1.5 Pro · Flash · Pro',
+    description: 'Gemini 2.0 Flash · 1.5 Flash · 1.5 Pro',
     placeholder: 'AIzaSy...',
     color: 'text-blue-400',
     bg: 'bg-blue-500',
   },
   {
-    id: 'groq',
-    label: 'Groq',
-    description: 'Llama 3 · Mixtral · Ultra-fast',
-    placeholder: 'gsk_...',
+    id: 'grok',
+    label: 'Grok / xAI',
+    description: 'Grok 2 · Grok 2 Mini · Grok Beta',
+    placeholder: 'xai-...',
     color: 'text-purple-400',
     bg: 'bg-purple-500',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic Claude',
+    description: 'Claude 3.5 Sonnet · Haiku · Opus',
+    placeholder: 'sk-ant-...',
+    color: 'text-amber-400',
+    bg: 'bg-amber-500',
   },
 ];
 
 const MODELS: Record<Provider, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
   gemini: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash-8b'],
-  groq: ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
+  grok: ['grok-2', 'grok-2-mini', 'grok-beta'],
+  anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
 };
 
 const DEFAULT_MODELS: Record<Provider, string> = {
   openai: 'gpt-4o',
   gemini: 'gemini-2.0-flash',
-  groq: 'llama-3.1-8b-instant',
+  grok: 'grok-2',
+  anthropic: 'claude-3-5-sonnet-20241022',
 };
 
 const Settings = () => {
   const { user, llmConfig, setLlmConfig } = useAuthStore();
 
   const [selectedProvider, setSelectedProvider] = useState<Provider>(
-    (llmConfig?.provider as Provider) || 'openai'
+    (((llmConfig?.provider as string) === 'groq' ? 'grok' : llmConfig?.provider) as Provider) || 'openai'
   );
   const [keys, setKeys] = useState({
     openai: llmConfig?.keys?.openai || '',
     gemini: llmConfig?.keys?.gemini || '',
-    groq: llmConfig?.keys?.groq || '',
+    grok: llmConfig?.keys?.grok || (llmConfig?.keys as any)?.groq || '',
+    anthropic: llmConfig?.keys?.anthropic || '',
   });
   const [selectedModel, setSelectedModel] = useState(
     llmConfig?.model || DEFAULT_MODELS[selectedProvider]
@@ -230,7 +241,7 @@ const Settings = () => {
 
       {/* Overall Status Banner */}
       {llmConfig && Boolean(llmConfig.keys?.[llmConfig.provider]?.trim()) ? (
-        <div className="mb-5 p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center space-x-2.5 text-green-400 text-sm">
+        <div className="mb-4 p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center space-x-2.5 text-green-400 text-sm">
           <ShieldCheck size={18} className="shrink-0" />
           <span>
             <strong className="capitalize">{llmConfig.provider}</strong> is active for this session
@@ -238,13 +249,21 @@ const Settings = () => {
           </span>
         </div>
       ) : (
-        <div className="mb-5 p-3.5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-center space-x-2.5 text-yellow-400 text-sm">
+        <div className="mb-4 p-3.5 bg-yellow-500/10 border border-yellow-500/30 rounded-xl flex items-center space-x-2.5 text-yellow-400 text-sm">
           <AlertCircle size={18} className="shrink-0" />
           <span>
-            No active AI provider key configured for this session. Enter your API key below to activate AI bug fixes.
+            No active AI provider key configured for this session. Enter your API key below to activate AI assistant explanations.
           </span>
         </div>
       )}
+
+      {/* Architecture Separation Notice */}
+      <div className="mb-6 p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-start space-x-2.5 text-blue-400 text-xs leading-relaxed">
+        <Zap size={16} className="shrink-0 mt-0.5 text-blue-400" />
+        <span>
+          <strong>Architecture Policy:</strong> Bug defect prediction and automated repair run on genuine Machine Learning models (Random Forest, XGBoost, LightGBM, SVM, Decision Tree). External LLM providers configured below are strictly used for optional code explanations, refactoring guidance, and documentation.
+        </span>
+      </div>
 
       {/* Alerts */}
       <AnimatePresence>

@@ -8,6 +8,8 @@ import Analysis from './pages/Analysis';
 import Settings from './pages/Settings';
 import Workspaces from './pages/Workspaces';
 import History from './pages/History';
+import DatasetStudio from './pages/DatasetStudio';
+import ModelWorkbench from './pages/ModelWorkbench';
 import Navbar from './components/common/Navbar';
 import ErrorBoundary from './components/common/ErrorBoundary';
 
@@ -52,6 +54,8 @@ function App() {
           {/* Authenticated Application Routes */}
           <Route path="/dashboard" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
           <Route path="/analysis" element={<ProtectedRoute><Layout><Analysis /></Layout></ProtectedRoute>} />
+          <Route path="/datasets" element={<ProtectedRoute><Layout><DatasetStudio /></Layout></ProtectedRoute>} />
+          <Route path="/models" element={<ProtectedRoute><Layout><ModelWorkbench /></Layout></ProtectedRoute>} />
           <Route path="/workspaces" element={<ProtectedRoute><Layout><Workspaces /></Layout></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><Layout><History /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />

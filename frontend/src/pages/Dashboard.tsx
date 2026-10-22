@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { analysisAPI } from '../services/api';
+import { analysisAPI, modelAPI } from '../services/api';
 import { motion } from 'framer-motion';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -9,7 +9,8 @@ import {
 } from 'recharts';
 import {
   ShieldCheck, ShieldAlert, FileWarning, Activity, Users,
-  FolderGit2, ArrowRight, Sparkles, BarChart2, PieChart as PieIcon
+  FolderGit2, ArrowRight, Sparkles, BarChart2, PieChart as PieIcon,
+  Cpu, Database
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -19,6 +20,7 @@ export const Dashboard: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [chartView, setChartView] = useState<'pie' | 'histogram'>('pie');
+  const [activeModel, setActiveModel] = useState<string>('Random Forest');
 
   useEffect(() => {
     if (user?.id) {
@@ -35,6 +37,13 @@ export const Dashboard: React.FC = () => {
         setHistory([]);
         setLoading(false);
       });
+
+      // Fetch active ML model
+      modelAPI.listModels().then((res) => {
+        if (res.success && res.active_model) {
+          setActiveModel(res.active_model);
+        }
+      }).catch(() => {});
     } else {
       setHistory([]);
       setLoading(false);
@@ -43,7 +52,19 @@ export const Dashboard: React.FC = () => {
 
   const latestAnalysis = history.length > 0 ? history[0] : null;
 
-  // Upgraded Pie Chart data with percentage calculation
+  // Safely parse full_results_json if available to inspect individual files
+  const parsedFullResults = useMemo(() => {
+    if (!latestAnalysis?.full_results_json) return null;
+    try {
+      return typeof latestAnalysis.full_results_json === 'string'
+        ? JSON.parse(latestAnalysis.full_results_json)
+        : latestAnalysis.full_results_json;
+    } catch {
+      return null;
+    }
+  }, [latestAnalysis]);
+
+  // Real Pie Chart data based on actual scanned file count
   const pieChartData = useMemo(() => {
     if (!latestAnalysis || latestAnalysis.total_files === 0) return [];
     const total = latestAnalysis.total_files;
@@ -66,21 +87,44 @@ export const Dashboard: React.FC = () => {
     ];
   }, [latestAnalysis]);
 
-  // Risk Score Histogram data (binned distribution)
+  // Real Risk Score Histogram data (calculated strictly from file ML probabilities, no synthetic math)
   const histogramData = useMemo(() => {
     if (!latestAnalysis) return [];
-    const total = latestAnalysis.total_files || 10;
+    const files: any[] = parsedFullResults?.all_ranked_files || [];
+
+    const bins = [
+      { bin: '0–20%', label: 'Minimal', count: 0, fill: '#10b981' },
+      { bin: '21–40%', label: 'Low', count: 0, fill: '#06b6d4' },
+      { bin: '41–60%', label: 'Moderate', count: 0, fill: '#c6f135' },
+      { bin: '61–80%', label: 'Elevated', count: 0, fill: '#f59e0b' },
+      { bin: '81–100%', label: 'High', count: 0, fill: '#ef4444' },
+    ];
+
+    if (files.length > 0) {
+      files.forEach((f) => {
+        const prob = typeof f.ml_probability === 'number'
+          ? f.ml_probability * 100
+          : (typeof f['risk_%'] === 'number' ? f['risk_%'] : 0);
+
+        if (prob <= 20) bins[0].count++;
+        else if (prob <= 40) bins[1].count++;
+        else if (prob <= 60) bins[2].count++;
+        else if (prob <= 80) bins[3].count++;
+        else bins[4].count++;
+      });
+      return bins;
+    }
+
+    // Exact fallback matching recorded risk counts when file arrays are archived
+    const total = latestAnalysis.total_files || 0;
     const high = latestAnalysis.high_risk_count || 0;
     const lowMed = Math.max(0, total - high);
-
     return [
-      { bin: '0–20%', label: 'Minimal', count: Math.round(lowMed * 0.45), fill: '#10b981' },
-      { bin: '21–40%', label: 'Low', count: Math.round(lowMed * 0.35), fill: '#06b6d4' },
-      { bin: '41–60%', label: 'Moderate', count: Math.round(lowMed * 0.20), fill: '#c6f135' },
-      { bin: '61–80%', label: 'Elevated', count: Math.round(high * 0.40), fill: '#f59e0b' },
-      { bin: '81–100%', label: 'High', count: Math.max(1, Math.round(high * 0.60)), fill: '#ef4444' },
+      { bin: '0–50%', label: 'Low / Moderate', count: lowMed, fill: '#10b981' },
+      { bin: '51–74%', label: 'Elevated', count: 0, fill: '#f59e0b' },
+      { bin: '75–100%', label: 'High Risk', count: high, fill: '#ef4444' },
     ];
-  }, [latestAnalysis]);
+  }, [latestAnalysis, parsedFullResults]);
 
   return (
     <motion.div
@@ -101,11 +145,19 @@ export const Dashboard: React.FC = () => {
             WELCOME BACK, {user?.username}
           </h1>
           <p className="text-[#a0a0a0] mt-0.5 text-xs sm:text-sm">
-            Continuous repository risk intelligence, AST defect analytics, and collaborative bug resolution.
+            Continuous repository risk intelligence, AST defect analytics, and ML bug resolution.
           </p>
         </div>
 
         <div className="flex items-center space-x-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => navigate('/models')}
+            className="bg-[#181818] hover:bg-[#222222] text-[#c6f135] border border-[#2a2a2a] px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all cursor-pointer"
+          >
+            <Cpu size={14} />
+            <span>Active Model: {activeModel}</span>
+          </button>
           <button
             type="button"
             onClick={() => navigate('/analysis')}
@@ -127,10 +179,10 @@ export const Dashboard: React.FC = () => {
           delay={0.05}
         />
         <MetricCard
-          title="Latest Repo"
-          value={latestAnalysis?.repo_name || 'None'}
-          icon={<FolderGit2 size={22} className="text-[#c6f135]" />}
-          subtitle={latestAnalysis ? (latestAnalysis.created_at ? formatDistanceToNow(new Date(latestAnalysis.created_at), { addSuffix: true }) : 'Recent') : 'No scans yet'}
+          title="Active Inference Model"
+          value={activeModel}
+          icon={<Cpu size={22} className="text-[#c6f135]" />}
+          subtitle="Trained ML model"
           delay={0.1}
         />
         <MetricCard
@@ -147,6 +199,47 @@ export const Dashboard: React.FC = () => {
           subtitle="ML probability ≥ 75%"
           delay={0.2}
         />
+      </div>
+
+      {/* Developer Workbench Quick Navigation */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div
+          onClick={() => navigate('/models')}
+          className="p-4 rounded-xl bg-gradient-to-r from-[#141414] to-[#1a1a1a] border border-[#2a2a2a] hover:border-[#c6f135]/50 transition-all cursor-pointer flex items-center justify-between group"
+        >
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-lg bg-[#c6f135]/10 text-[#c6f135] group-hover:scale-105 transition-transform">
+              <Cpu size={20} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center space-x-2">
+                <span>Model Workbench</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#c6f135]/20 text-[#c6f135] font-mono">6 Models</span>
+              </h4>
+              <p className="text-xs text-[#a0a0a0]">Train, benchmark PR-AUC/ROC-AUC, and hot-swap inference models</p>
+            </div>
+          </div>
+          <ArrowRight size={16} className="text-[#a0a0a0] group-hover:text-[#c6f135] group-hover:translate-x-1 transition-all" />
+        </div>
+
+        <div
+          onClick={() => navigate('/datasets')}
+          className="p-4 rounded-xl bg-gradient-to-r from-[#141414] to-[#1a1a1a] border border-[#2a2a2a] hover:border-[#06b6d4]/50 transition-all cursor-pointer flex items-center justify-between group"
+        >
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-lg bg-[#06b6d4]/10 text-[#06b6d4] group-hover:scale-105 transition-transform">
+              <Database size={20} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center space-x-2">
+                <span>Dataset Studio</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#06b6d4]/20 text-[#06b6d4] font-mono">CSV / JSON / Repo</span>
+              </h4>
+              <p className="text-xs text-[#a0a0a0]">Inspect schema distributions, missing rates, and prevent data leakage</p>
+            </div>
+          </div>
+          <ArrowRight size={16} className="text-[#a0a0a0] group-hover:text-[#06b6d4] group-hover:translate-x-1 transition-all" />
+        </div>
       </div>
 
       {/* Grid: Charts + Recent Analyses */}

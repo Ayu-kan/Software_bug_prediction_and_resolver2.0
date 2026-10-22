@@ -200,6 +200,58 @@ def init_db():
         )
     """)
 
+    # 11. Refresh Tokens — For short-lived JWT token rotation and revocation
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL,
+            expires_at REAL NOT NULL,
+            revoked    INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+    """)
+
+    # 12. Datasets — Multi-format uploaded datasets (CSV, JSON, Repo)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS datasets (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       INTEGER NOT NULL,
+            workspace_id  INTEGER DEFAULT NULL,
+            name          TEXT NOT NULL,
+            format        TEXT NOT NULL,
+            file_path     TEXT NOT NULL,
+            row_count     INTEGER DEFAULT 0,
+            feature_count INTEGER DEFAULT 0,
+            schema_json   TEXT DEFAULT '{}',
+            summary_json  TEXT DEFAULT '{}',
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (workspace_id) REFERENCES workspaces (id) ON DELETE SET NULL
+        )
+    """)
+
+    # 13. Patch History — Rollback history and candidate test verification
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS patch_history (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id           INTEGER NOT NULL,
+            workspace_id      INTEGER DEFAULT NULL,
+            analysis_id       INTEGER DEFAULT NULL,
+            file_path         TEXT NOT NULL,
+            backup_file_path  TEXT NOT NULL,
+            original_code     TEXT NOT NULL,
+            patched_code      TEXT NOT NULL,
+            diff_content      TEXT NOT NULL,
+            test_results_json TEXT DEFAULT '{}',
+            status            TEXT NOT NULL DEFAULT 'applied',
+            created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (workspace_id) REFERENCES workspaces (id) ON DELETE SET NULL
+        )
+    """)
+
     # Auto-migrate missing columns for existing users table
     cursor.execute("PRAGMA table_info(users)")
     u_cols = [r["name"] for r in cursor.fetchall()]
@@ -1093,6 +1145,177 @@ def mark_samples_used(sample_ids: List[int]) -> None:
     conn.close()
 
 
+# ----------------- Refresh Token Management -----------------
+
+def save_refresh_token(user_id: int, token_hash: str, expires_at: float) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, revoked) VALUES (?, ?, ?, 0)",
+        (user_id, token_hash, expires_at)
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+def get_refresh_token(token_hash: str) -> Optional[dict]:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, user_id, token_hash, expires_at, revoked, created_at FROM refresh_tokens WHERE token_hash = ?",
+        (token_hash,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def revoke_refresh_token(token_hash: str) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?", (token_hash,))
+    affected = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return affected
+
+def revoke_user_refresh_tokens(user_id: int) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
+# ----------------- Datasets Management -----------------
+
+def save_dataset_record(
+    user_id: int,
+    name: str,
+    format_type: str,
+    file_path: str,
+    row_count: int,
+    feature_count: int,
+    schema_json: str,
+    summary_json: str,
+    workspace_id: Optional[int] = None
+) -> int:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO datasets (user_id, workspace_id, name, format, file_path, row_count, feature_count, schema_json, summary_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, workspace_id, name, format_type, file_path, row_count, feature_count, schema_json, summary_json)
+    )
+    dataset_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return dataset_id
+
+def get_user_datasets(user_id: int, workspace_id: Optional[int] = None) -> List[dict]:
+    conn = get_db()
+    cursor = conn.cursor()
+    if workspace_id:
+        cursor.execute(
+            "SELECT * FROM datasets WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY id DESC",
+            (workspace_id, user_id)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM datasets WHERE user_id = ? ORDER BY id DESC",
+            (user_id,)
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_dataset_by_id(dataset_id: int, user_id: Optional[int] = None) -> Optional[dict]:
+    conn = get_db()
+    cursor = conn.cursor()
+    if user_id:
+        cursor.execute("SELECT * FROM datasets WHERE id = ? AND user_id = ?", (dataset_id, user_id))
+    else:
+        cursor.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def delete_dataset_record(dataset_id: int, user_id: int) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM datasets WHERE id = ? AND user_id = ?", (dataset_id, user_id))
+    affected = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return affected
+
+
+# ----------------- Patch & Rollback Management -----------------
+
+def save_patch_record(
+    user_id: int,
+    file_path: str,
+    backup_file_path: str,
+    original_code: str,
+    patched_code: str,
+    diff_content: str,
+    test_results_json: str,
+    workspace_id: Optional[int] = None,
+    analysis_id: Optional[int] = None,
+    status: str = "applied"
+) -> int:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO patch_history (user_id, workspace_id, analysis_id, file_path, backup_file_path, original_code, patched_code, diff_content, test_results_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, workspace_id, analysis_id, file_path, backup_file_path, original_code, patched_code, diff_content, test_results_json, status)
+    )
+    patch_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return patch_id
+
+def get_patch_history(user_id: int, workspace_id: Optional[int] = None, limit: int = 50) -> List[dict]:
+    conn = get_db()
+    cursor = conn.cursor()
+    if workspace_id:
+        cursor.execute(
+            "SELECT * FROM patch_history WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL) ORDER BY id DESC LIMIT ?",
+            (workspace_id, user_id, limit)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM patch_history WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit)
+        )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_patch_by_id(patch_id: int) -> Optional[dict]:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM patch_history WHERE id = ?", (patch_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def update_patch_status(patch_id: int, status: str) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE patch_history SET status = ? WHERE id = ?", (status, patch_id))
+    affected = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return affected
+
+
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully.")
+

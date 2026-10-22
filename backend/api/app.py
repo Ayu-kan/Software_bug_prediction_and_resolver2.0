@@ -38,8 +38,8 @@ from backend.database.db import (
     get_model_history as db_get_model_history,
 )
 from backend.auth.auth_service import (
-    register_user, login_user, update_user_llm_config, get_user_llm_config,
-    find_user_by_query
+    register_user, login_user, refresh_user_token, logout_user,
+    update_user_llm_config, get_user_llm_config, find_user_by_query
 )
 from backend.auth.security import verify_access_token
 from backend.services.ranking_service import rank_files, get_top_10_risky_files, filter_hybrid_mode
@@ -78,6 +78,12 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
 class ConfigRequest(BaseModel):
     user_id: int
     provider: str
@@ -115,6 +121,7 @@ class AnalysisRequest(BaseModel):
     user_id: int
     workspace_id: Optional[int] = None
     analysis_mode: Optional[str] = "Normal Mode (All Files)"
+    model_name: Optional[str] = None
 
 class ResolveRequest(BaseModel):
     file_path: str
@@ -144,8 +151,14 @@ class FeedbackRequest(BaseModel):
 def handle_register(req: RegisterRequest):
     return register_user(req.username, req.email, req.password)
 
-def handle_login(req: LoginRequest):
-    return login_user(req.username, req.password)
+def handle_login(req: LoginRequest, client_ip: str = "default"):
+    return login_user(req.username, req.password, client_ip)
+
+def handle_refresh(req: RefreshTokenRequest):
+    return refresh_user_token(req.refresh_token)
+
+def handle_logout(req: LogoutRequest):
+    return logout_user(req.refresh_token)
 
 def handle_config(req: ConfigRequest):
     return update_user_llm_config(req.user_id, req.provider, req.api_key, req.all_keys)
@@ -218,7 +231,7 @@ def handle_get_workspace_activities(workspace_id: int):
 
 # ----------------- Analysis Handlers -----------------
 
-def handle_analysis(repo_path: str, user_id: int, workspace_id: Optional[int] = None, analysis_mode: str = "Normal Mode (All Files)"):
+def handle_analysis(repo_path: str, user_id: int, workspace_id: Optional[int] = None, analysis_mode: str = "Normal Mode (All Files)", model_name: Optional[str] = None):
     if workspace_id:
         role = get_user_role_in_workspace(workspace_id, user_id)
         if not role:
@@ -230,7 +243,25 @@ def handle_analysis(repo_path: str, user_id: int, workspace_id: Optional[int] = 
     if not is_valid:
         return {"success": False, "error": err_msg}
 
-    model_name, model, scaler = load_ml_model()
+    # Load requested model or default
+    active_model_name, model, scaler = load_ml_model()
+    if model_name:
+        fname_map = {
+            "xgboost": ("XGBoost", "xgboost.joblib", False),
+            "random forest": ("Random Forest", "random_forest.joblib", False),
+            "logistic regression": ("Logistic Regression", "logistic_regression.joblib", True),
+            "decision tree": ("Decision Tree", "decision_tree.joblib", False),
+            "svm": ("SVM", "svm.joblib", True),
+            "lightgbm": ("LightGBM", "lightgbm.joblib", False),
+        }
+        cand = fname_map.get(model_name.lower().strip())
+        if cand:
+            path = os.path.join(MODELS_DIR, cand[1])
+            if os.path.exists(path):
+                model = joblib.load(path)
+                active_model_name = cand[0]
+                scaler = joblib.load(os.path.join(MODELS_DIR, "scaler.joblib")) if cand[2] else None
+
     if not model:
         return {"success": False, "error": "No trained ML model found in models directory."}
 
@@ -342,6 +373,7 @@ def handle_analysis(repo_path: str, user_id: int, workspace_id: Optional[int] = 
             "all_ranked_files": ranked_all,
             "top_10_files": top_10,
             "hybrid_mode_files": hybrid_filtered,
+            "model_used": active_model_name,
             "workspace_id": workspace_id
         }
 
@@ -585,5 +617,258 @@ def handle_get_file_content(file_path: str, repo_path: Optional[str] = None):
         return {"success": False, "error": f"File not found at path: {file_path}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+# ----------------- Dataset & ML Workbench Schemas -----------------
+
+class TrainModelRequest(BaseModel):
+    model_type: str
+    dataset_id: Optional[int] = None
+    test_split: Optional[float] = 0.25
+    hyperparameters: Optional[Dict[str, Any]] = None
+    model_name: Optional[str] = None
+
+class CompareModelsRequest(BaseModel):
+    dataset_id: Optional[int] = None
+    test_split: Optional[float] = 0.25
+
+class SetActiveModelRequest(BaseModel):
+    model_name: str
+
+class CandidateRepairRequest(BaseModel):
+    file_path: str
+    source_code: str
+    risk_cause: Optional[str] = None
+    analysis_id: Optional[int] = None
+
+class VerifyRepairRequest(BaseModel):
+    file_path: str
+    candidate_code: str
+    repo_path: Optional[str] = None
+
+class ApplyPatchRequest(BaseModel):
+    file_path: str
+    candidate_code: str
+    diff_content: str
+    test_results: Optional[Dict[str, Any]] = None
+    repo_path: Optional[str] = None
+    workspace_id: Optional[int] = None
+    analysis_id: Optional[int] = None
+
+# ----------------- Model Registry Handlers -----------------
+
+def handle_list_models():
+    from src.ml.registry import ModelRegistry
+    registry = ModelRegistry()
+    meta = registry.get_meta()
+    algos = registry.get_supported_algorithms()
+    return {
+        "success": True,
+        "active_model": meta.get("active_model", "random_forest"),
+        "algorithms": algos,
+        "registered_versions": list(meta.get("models", {}).values())
+    }
+
+def handle_train_model(req: TrainModelRequest, user_id: int):
+    from src.ml.registry import ModelRegistry
+    from src.ml.preprocessing import DatasetPreprocessor
+    from backend.database.db import get_dataset_by_id
+
+    registry = ModelRegistry()
+    df = None
+    if req.dataset_id:
+        ds_rec = get_dataset_by_id(req.dataset_id)
+        if not ds_rec:
+            return {"success": False, "error": f"Dataset #{req.dataset_id} not found."}
+        df = DatasetPreprocessor.load_dataset(ds_rec["file_path"])
+    else:
+        # Load accumulated training samples from database
+        from backend.database.db import get_training_dataset
+        rows = get_training_dataset()
+        if not rows:
+            return {"success": False, "error": "No training samples available. Upload a dataset first."}
+        df = pd.DataFrame(rows)
+        if "label" in df.columns and "future_bug" not in df.columns:
+            df["future_bug"] = df["label"]
+
+    try:
+        res = registry.train_model(
+            algorithm_id=req.model_type,
+            df=df,
+            test_split=req.test_split or 0.25,
+            hyperparams=req.hyperparameters,
+            model_name=req.model_name,
+            triggered_by=f"user_{user_id}"
+        )
+        return {"success": True, **res}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_compare_models(req: CompareModelsRequest, user_id: int):
+    from src.ml.registry import ModelRegistry
+    from src.ml.preprocessing import DatasetPreprocessor
+    from backend.database.db import get_dataset_by_id
+
+    registry = ModelRegistry()
+    df = None
+    if req.dataset_id:
+        ds_rec = get_dataset_by_id(req.dataset_id)
+        if not ds_rec:
+            return {"success": False, "error": f"Dataset #{req.dataset_id} not found."}
+        df = DatasetPreprocessor.load_dataset(ds_rec["file_path"])
+    else:
+        from backend.database.db import get_training_dataset
+        rows = get_training_dataset()
+        if not rows:
+            return {"success": False, "error": "No training samples found to compare models. Upload a dataset first."}
+        df = pd.DataFrame(rows)
+        if "label" in df.columns and "future_bug" not in df.columns:
+            df["future_bug"] = df["label"]
+
+    try:
+        results = registry.compare_models(df=df, test_split=req.test_split or 0.25)
+        return {"success": True, "leaderboard": results}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_set_active_model(model_name: str):
+    from src.ml.registry import ModelRegistry
+    registry = ModelRegistry()
+    ok = registry.set_active_model(model_name)
+    return {"success": ok, "active_model": model_name}
+
+# ----------------- Dataset Handlers -----------------
+
+def handle_save_uploaded_dataset(
+    filename: str,
+    content_bytes: bytes,
+    user_id: int,
+    workspace_id: Optional[int] = None
+) -> dict:
+    from src.ml.preprocessing import DatasetPreprocessor
+    from backend.database.db import save_dataset_record
+
+    upload_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data", "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    clean_name = os.path.basename(filename)
+    safe_name = f"{int(time.time())}_{clean_name}"
+    target_path = os.path.join(upload_dir, safe_name)
+
+    with open(target_path, "wb") as f:
+        f.write(content_bytes)
+
+    try:
+        df = DatasetPreprocessor.load_dataset(target_path)
+        schema = DatasetPreprocessor.inspect_schema(df)
+        
+        fmt = "csv" if filename.lower().endswith(".csv") else "json"
+        dataset_id = save_dataset_record(
+            user_id=user_id,
+            name=clean_name,
+            format_type=fmt,
+            file_path=target_path,
+            row_count=len(df),
+            feature_count=len(df.columns),
+            schema_json=json.dumps(schema),
+            summary_json=json.dumps({"columns": list(df.columns)}),
+            workspace_id=workspace_id
+        )
+
+        return {
+            "success": True,
+            "dataset_id": dataset_id,
+            "name": clean_name,
+            "row_count": len(df),
+            "column_count": len(df.columns),
+            "schema": schema
+        }
+    except Exception as e:
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except Exception:
+                pass
+        return {"success": False, "error": f"Failed to ingest dataset: {str(e)}"}
+
+def handle_list_datasets(user_id: int, workspace_id: Optional[int] = None):
+    from backend.database.db import get_user_datasets
+    datasets = get_user_datasets(user_id, workspace_id)
+    return {"success": True, "datasets": datasets}
+
+def handle_preview_dataset(dataset_id: int, user_id: int):
+    from backend.database.db import get_dataset_by_id
+    from src.ml.preprocessing import DatasetPreprocessor
+
+    ds = get_dataset_by_id(dataset_id)
+    if not ds:
+        return {"success": False, "error": f"Dataset #{dataset_id} not found."}
+
+    try:
+        df = DatasetPreprocessor.load_dataset(ds["file_path"])
+        schema = DatasetPreprocessor.inspect_schema(df)
+        head_records = df.head(20).replace({np.nan: None}).to_dict(orient="records")
+        return {
+            "success": True,
+            "dataset": ds,
+            "schema": schema,
+            "preview_rows": head_records
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_delete_dataset(dataset_id: int, user_id: int):
+    from backend.database.db import get_dataset_by_id, delete_dataset_record
+    ds = get_dataset_by_id(dataset_id, user_id)
+    if not ds:
+        return {"success": False, "error": "Dataset not found or access denied."}
+
+    if ds.get("file_path") and os.path.exists(ds["file_path"]):
+        try:
+            os.remove(ds["file_path"])
+        except Exception:
+            pass
+
+    ok = delete_dataset_record(dataset_id, user_id)
+    return {"success": ok, "message": "Dataset deleted successfully."}
+
+# ----------------- Bug Repair Handlers -----------------
+
+def handle_generate_candidate_repair(req: CandidateRepairRequest):
+    from src.ml.repair.patch_generator import BugPatchGenerator
+    generator = BugPatchGenerator()
+    return generator.generate_candidate_patch(
+        file_path=req.file_path,
+        source_code=req.source_code,
+        risk_cause=req.risk_cause
+    )
+
+def handle_verify_candidate_repair(req: VerifyRepairRequest):
+    from backend.services.rollback_service import RollbackService
+    return RollbackService.verify_candidate_patch(
+        file_path=req.file_path,
+        candidate_code=req.candidate_code
+    )
+
+def handle_apply_repair_patch(req: ApplyPatchRequest, user_id: int):
+    from backend.services.rollback_service import RollbackService
+    return RollbackService.apply_patch(
+        user_id=user_id,
+        file_path=req.file_path,
+        candidate_code=req.candidate_code,
+        diff_content=req.diff_content,
+        test_results=req.test_results,
+        repo_path=req.repo_path,
+        workspace_id=req.workspace_id,
+        analysis_id=req.analysis_id
+    )
+
+def handle_rollback_repair_patch(patch_id: int, user_id: int):
+    from backend.services.rollback_service import RollbackService
+    return RollbackService.rollback_patch(patch_id=patch_id, user_id=user_id)
+
+def handle_get_repair_history(user_id: int, workspace_id: Optional[int] = None):
+    from backend.database.db import get_patch_history
+    history = get_patch_history(user_id=user_id, workspace_id=workspace_id)
+    return {"success": True, "history": history}
 
 app = FastAPI()

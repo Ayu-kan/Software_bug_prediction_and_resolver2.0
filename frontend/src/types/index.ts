@@ -21,6 +21,7 @@ export interface AnalysisRequest {
   user_id: number;
   workspace_id?: number | null;
   analysis_mode?: string;
+  model_name?: string;
 }
 
 export interface ResolveRequest {

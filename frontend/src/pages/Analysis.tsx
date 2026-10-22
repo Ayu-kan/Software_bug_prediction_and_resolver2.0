@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Loader2, FolderSearch, Settings2, ThumbsUp, ThumbsDown, CheckCircle2 } from 'lucide-react';
+import { Play, Loader2, FolderSearch, Settings2, ThumbsUp, ThumbsDown, CheckCircle2, Cpu } from 'lucide-react';
 import { analysisAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useAnalysisStore } from '../store/analysisStore';
@@ -14,6 +14,7 @@ const Analysis = () => {
   
   const [repoPath, setRepoPath] = useState('');
   const [mode, setMode] = useState('Normal Mode (All Files)');
+  const [selectedModel, setSelectedModel] = useState('');
   const [error, setError] = useState('');
   
   const [previewFile, setPreviewFile] = useState<any>(null);
@@ -35,7 +36,8 @@ const Analysis = () => {
         repo_path: repoPath.trim(),
         user_id: user.id,
         workspace_id: activeWorkspace?.id,
-        analysis_mode: mode
+        analysis_mode: mode,
+        model_name: selectedModel || undefined
       });
 
       if (res.success) {
@@ -102,7 +104,7 @@ const Analysis = () => {
               />
             </div>
             
-            <div className="w-full md:w-64">
+            <div className="w-full md:w-56">
               <label className="block text-sm font-medium mb-2 flex items-center space-x-2">
                 <Settings2 size={16} />
                 <span>Analysis Mode</span>
@@ -114,6 +116,26 @@ const Analysis = () => {
               >
                 <option value="Normal Mode (All Files)">Normal Mode (All Files)</option>
                 <option value="Hybrid Mode (Risk > 60%)">Hybrid Mode (Risk &gt; 60%)</option>
+              </select>
+            </div>
+
+            <div className="w-full md:w-56">
+              <label className="block text-sm font-medium mb-2 flex items-center space-x-2">
+                <Cpu size={16} />
+                <span>ML Model</span>
+              </label>
+              <select
+                className="w-full bg-secondary/50 border border-border rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary transition-all appearance-none"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+              >
+                <option value="">Active Registry Model</option>
+                <option value="random_forest">Random Forest</option>
+                <option value="xgboost">XGBoost</option>
+                <option value="decision_tree">Decision Tree</option>
+                <option value="logistic_regression">Logistic Regression</option>
+                <option value="svm">Support Vector Machine (SVM)</option>
+                <option value="lightgbm">LightGBM</option>
               </select>
             </div>
 
@@ -149,7 +171,7 @@ const Analysis = () => {
             animate={{ opacity: 1 }}
             className="space-y-6"
           >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                <div className="glass p-4 rounded-lg border border-border text-center">
                   <p className="text-sm text-muted-foreground mb-1">Total Files</p>
                   <p className="text-2xl font-bold">{currentAnalysis.total_files}</p>
@@ -161,6 +183,10 @@ const Analysis = () => {
                <div className="glass p-4 rounded-lg border border-border text-center">
                   <p className="text-sm text-muted-foreground mb-1">Displaying</p>
                   <p className="text-2xl font-bold text-primary">{displayFiles.length}</p>
+               </div>
+               <div className="glass p-4 rounded-lg border border-border text-center">
+                  <p className="text-sm text-muted-foreground mb-1">ML Model Used</p>
+                  <p className="text-lg font-bold text-[#c6f135] truncate px-1">{currentAnalysis.model_used || 'Random Forest'}</p>
                </div>
                <div className="glass p-4 rounded-lg border border-border text-center">
                   <p className="text-sm text-muted-foreground mb-1">Repo Name</p>

@@ -52,10 +52,15 @@ export const Login: React.FC = () => {
       if (isLoginMode) {
         const res = await authAPI.login({ username: formData.username, password: formData.password });
         if (res.success) {
-          login({ id: res.user_id, username: res.username }, {
-            provider: res.llm_provider || 'openai',
-            keys: res.keys || { openai: res.llm_api_key || '', gemini: '', groq: '' }
-          });
+          login(
+            { id: res.user_id, username: res.username },
+            {
+              provider: res.llm_provider || 'openai',
+              keys: res.keys || { openai: res.llm_api_key || '', gemini: '', grok: '', anthropic: '' }
+            },
+            res.access_token || res.token,
+            res.refresh_token
+          );
           navigate('/dashboard');
         } else {
           setError(res.error || res.message || 'Invalid username or password.');
